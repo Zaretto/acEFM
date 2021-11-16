@@ -1,0 +1,47 @@
+//DCS local coordinates are in North, Up, East (NUE) convention
+//First Create Direction Cosine Matrices (DCM) to represent the aircraft orientation relative to the local frame (NUE)
+NUE_to_body_DCM = getDCMFromYPR(yaw, pitch, roll);
+body_to_NUE_DCM = NUE_to_body_DCM.Transpose();
+
+//Assumed Eye Position of the Pilot in Body coordinates
+Vector3 pilotEye = getModelPosition(state->f16->pilot_eye_FS_in, state->f16->pilot_eye_WL_in, 0.0);
+
+//Assumed Eye Position of the Pilot in Local coordinates
+Vector3 pilotEyeLocalNav = state->egi->getCurrentLocation().LO + (body_to_NUE_DCM * pilotEye);
+
+//Unit Vector from Local Pilot Eye Position to Local Steerpoint Position
+Vector3 eyeToSteerpointLocal = (stpt.location.LO - pilotEyeLocalNav).UnitVector();
+
+//Vector from Pilot Eye location to steerpoint location in the Body frame
+Vector3 eyeToSteerpointBody = NUE_to_body_DCM * eyeToSteerpointLocal;
+
+//Get Body frame Azimuth and Elevation to use for position the symbology on the HUD
+getAzimuthElevation(eyeToSteerpointBody, stpt_azimuth_rad, stpt_elevation_rad);
+
+Matrix33 getDCMFromYPR(double yaw, double pitch, double roll)
+{
+    Matrix33 mtr;
+    yaw = M_PI * 2.0 - yaw;
+    double siny = sin(yaw);
+    double cosy = cos(yaw);
+    double sinp = sin(pitch);
+    double cosp = cos(pitch);
+    double sinr = sin(roll);
+    double cosr = cos(roll);
+
+    mtr.x.x = cosy*cosp;                    mtr.x.y = sinp;                mtr.x.z = siny*cosp;
+    mtr.y.x = -siny*sinr - cosy*sinp*cosr;     mtr.y.y = cosp*cosr;        mtr.y.z = cosy*sinr - siny*sinp*cosr;
+    mtr.z.x = cosy*sinp*sinr - siny*cosr;    mtr.z.y = -cosp*sinr;        mtr.z.z = cosy*cosr + siny*sinp*sinr;
+
+    return mtr;
+}
+
+
+// Az/El Utility Function
+void getAzimuthElevation(const Vector3& vec, double& azimuth, double& elevation)
+{
+    //North, Up, East (NUE) Local Frame
+    //Azimuth + to the right
+    elevation = asin(vec.y);
+    azimuth = -atan2(vec.z, vec.x);
+}
