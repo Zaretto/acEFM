@@ -119,7 +119,7 @@
     </Link>
     <PostBuildEvent>
       <Command>copy /y "$(outputPath)acEFM.dll" "C:\Users\Richard\Saved Games\DCS.openbeta\Mods\aircraft\F-15T\bin\"
-copy /y "$(outputPath)acEFM.dll" "C:\Users\Richard\Saved Games\DCS.openbeta\Mods\aircraft\P-51D\bin\"</Command>
+</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
