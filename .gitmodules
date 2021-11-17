@@ -1,0 +1,3 @@
+[submodule "JSBSim"]
+	path = JSBSim
+	url = git://git.code.sf.net/p/jsbsim/code
