@@ -37,10 +37,10 @@ namespace Symon.DataSource
             }
             else
             {
-                Command("HOLD");
-                res = Command("get " + Root);
+                Command("HOLD", 1000);
+                res = Command("get " + Root, 10000);
 
-                Command("RESUME");
+                Command("RESUME", 1000);
             }
             res = res.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n\n", "\n");
             var lines = res.Split('\n');
@@ -129,7 +129,7 @@ namespace Symon.DataSource
             {
                 update = update + "get " + item + "\r\n";
             }
-            string res = Command(update);
+            string res = Command(update,25);
             BuildingBatch = false;
             BatchUpdate.Clear();
             var lines = res.Split('\n');
@@ -165,13 +165,13 @@ namespace Symon.DataSource
         public override void SetValue(String item, string value)
         {
             String res;
-            res = Command("set " + item + " " + value + "\n");
+            res = Command("set " + item + " " + value + "\n", 25);
         }
 
         public override String GetValue(String item)
         {
             String res;
-            res = Command("get " + item + "\n");
+            res = Command("get " + item + "\n", 25);
 
             var lines = res.Split('\n');
 
@@ -208,7 +208,7 @@ namespace Symon.DataSource
             if (sender == null)
                 return;
             System.Console.WriteLine("HOLD");
-            System.Console.WriteLine(Command("hold"));
+            System.Console.WriteLine(Command("hold",100));
         }
 
         public override void OpenConnection()
@@ -221,7 +221,7 @@ namespace Symon.DataSource
                 return;
 
             System.Console.WriteLine("RESUME");
-            System.Console.WriteLine(Command("resume"));
+            System.Console.WriteLine(Command("resume",100));
         }
     }
 }

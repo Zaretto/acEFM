@@ -83,7 +83,7 @@ namespace Symon.DataSource
             }
         }
 
-        protected String Command(String command)
+        protected String Command(String command, int timeoutMS)
         {
             if (sender != null)
             {
@@ -95,7 +95,7 @@ namespace Symon.DataSource
                     }
                     byte[] msg = Encoding.ASCII.GetBytes(command);
                     sender.Send(msg);
-                    System.Threading.Thread.Sleep(50);
+                    System.Threading.Thread.Sleep(timeoutMS);
                     // Receive the response from the remote device.
                     string ret = "";
                     ret = ReceiveAll();

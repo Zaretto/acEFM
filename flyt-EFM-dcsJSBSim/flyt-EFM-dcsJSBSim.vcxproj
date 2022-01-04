@@ -70,7 +70,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>..\..\..\bin\x86_64\vc100.debug</OutDir>
+    <OutDir>I:\dev\dcs\aceFM\bin</OutDir>
     <IncludePath>$(MSBuildProjectDirect)..\;$(MSBuildProjectDirect)..\JSBSim\src\;$(VC_IncludePath);$(WindowsSDK_IncludePath)</IncludePath>
     <TargetName>JSBSimEFM</TargetName>
   </PropertyGroup>

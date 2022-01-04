@@ -92,6 +92,7 @@ namespace Symon
         
         private void buttonLoad_Click(object sender, EventArgs e)
         {
+            LoadProperties();
             LoadProps();
         }
 
@@ -161,8 +162,10 @@ namespace Symon
 
         private void buttonClear_Click(object sender, EventArgs e)
         {
+            Registry.SetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Properties", "");
+
             monitoredVariables.Clear();
-          //  dataGridView1.Invalidate();
+            dataGridView1.Invalidate();
         }
 
         private void buttonDisconnect_Click(object sender, EventArgs e)
