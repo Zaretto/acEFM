@@ -81,7 +81,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>$(MSBuildProjectDirect)..\;$(MSBuildProjectDirect)..\JSBSim\src\;$(VC_IncludePath);$(WindowsSDK_IncludePath)</IncludePath>
-    <OutDir>..\bin</OutDir>
+    <OutDir>..\bin\</OutDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -94,6 +94,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_UNICODE;UNICODE;%(PreprocessorDefinitions);JSBSIM_STATIC_LINK</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -111,7 +112,8 @@
       </Outputs>
     </CustomBuildStep>
     <PostBuildEvent>
-      <Command>copy /y "$(MSBuildProjectDirectory)\aceFMconfig.xml" "C:\Users\Richard\Saved Games\DCS.openbeta\Mods\aircraft\F-15T\"</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -133,7 +135,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions);JSBSIM_STATIC_LINK</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -149,7 +151,8 @@
       </Outputs>
     </CustomBuildStep>
     <PostBuildEvent>
-      <Command>copy /y "$(MSBuildProjectDirectory)\aceFMconfig.xml" "C:\Users\Richard\Saved Games\DCS.openbeta\Mods\aircraft\F-15T\"</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">

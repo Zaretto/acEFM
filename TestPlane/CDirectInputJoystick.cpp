@@ -39,7 +39,10 @@ HRESULT CDirectInputJoystick::InitDI(HWND hWnd, HINSTANCE hInstance)
 		if( FAILED(m_pDI->EnumDevices( DI8DEVCLASS_GAMECTRL, EnumJoysticksCallback, NULL, DIEDFL_ATTACHEDONLY ) ) )
 			return E_FAIL;
 
-		if( FAILED(m_pDIJoy->SetDataFormat( &c_dfDIJoystick2 ) ) )
+        if (!m_pDIJoy)
+            return E_FAIL;
+
+        if (FAILED(m_pDIJoy->SetDataFormat(&c_dfDIJoystick2)))
 			return E_FAIL;
 
 		//if( FAILED(m_pDIJoy->SetCooperativeLevel( hWnd, DISCL_EXCLUSIVE | DISCL_FOREGROUND ) ) )
@@ -64,6 +67,8 @@ HRESULT CDirectInputJoystick::InitDI(HWND hWnd, HINSTANCE hInstance)
 /************************************************************************/
 HRESULT CDirectInputJoystick::ProcessJoy()
 {
+    if (!m_pDIJoy)
+        return E_FAIL;
 	//Get joystick state and fill buffer
     if(FAILED(m_pDIJoy->Poll()))  
     {
