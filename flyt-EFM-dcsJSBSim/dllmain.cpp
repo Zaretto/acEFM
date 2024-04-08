@@ -17,7 +17,7 @@ BOOL APIENTRY DllMain( HMODULE hModule,
 		SetConsoleTitle((L"DCS EFM debug console"));
 		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_RED);
 	} else {
-		MessageBox(0,L"FAIL_console",L"Error",0);
+		//	MessageBox(0,L"FAIL_console",L"Error",0);
 	}
   
 	break;
