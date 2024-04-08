@@ -64,15 +64,18 @@ public:
             attval = atts.getValue("include");
             if (attval != 0) {
                 try {
+                    //TODO: search for file in path...
                     //SGPath path = simgear::ResourceManager::instance()->findPath(attval, SGPath(_base).dir());
                     //if (path.isNull())
                     //{
-                        string message = "Cannot open file ";
-                        message = "Find file logic missing";
-                        message += attval;
-                        throw sg_io_exception(message, location);
+                        //string message = "Cannot open file ";
+                        //message = "Find file logic missing";
+                        //message += attval;
+                        //throw sg_io_exception(message, location);
                     //}
                     //readProperties(path, _root, 0, _extended);
+
+                    // for now just assume that the filename will be found at the location in the attribute value.
                     readProperties(attval, _root, 0, _extended);
                         
                 }
@@ -161,9 +164,10 @@ public:
                         /*SGPath path = simgear::ResourceManager::instance()->findPath(val, SGPath(_base).dir());
                         if (path.isNull())
                         {*/
-                            string message = "Cannot open file ";
-                            message += val;
-                            throw sg_io_exception(message, location);
+
+//string message = "Cannot open file ";
+//message += val;
+//throw sg_io_exception(message, location);
                        /* }
                         readProperties(path, node, 0, _extended);*/
                         readProperties(val, _root, 0, _extended);
@@ -270,13 +274,13 @@ public:
             int nChildren = st.node->nChildren();
             for (int i = 0; i < nChildren; i++) {
                 SGPropertyNode* src = st.node->getChild(i);
-                const char* name = src->getName();
+                std::string name = src->getNameString();
                 int index = parent.counters[name];
                 parent.counters[name]++;
                 SGPropertyNode* dst = parent.node->getChild(name, index, true);
                 copyProperties(src, dst);
             }
-            parent.node->removeChild(st.node->getName(), st.node->getIndex());
+            parent.node->removeChild(st.node->getNameString(), st.node->getIndex());
         }
         pop_state();
     }

@@ -257,22 +257,22 @@ public:
     }
     FGSurfaces surfaces;
     FGSurfaces *get_surfaces() { return &surfaces; }
-//private:
-    JSBSim::FGFDMExec *fdmex;
-    JSBSim::FGInitialCondition *fgic;
     bool needTrim;
     double Wingspan;
     double Wingchord;
-    JSBSim::FGAtmosphere*      Atmosphere;
-    JSBSim::FGWinds*           Winds;
-    JSBSim::FGFCS*             FCS;
-    JSBSim::FGPropulsion*      Propulsion;
-    JSBSim::FGMassBalance*     MassBalance;
-    JSBSim::FGAircraft*        Aircraft;
-    JSBSim::FGPropagate*       Propagate;
-    JSBSim::FGAuxiliary*       Auxiliary;
-    JSBSim::FGAerodynamics*    Aerodynamics;
-    JSBSim::FGGroundReactions* GroundReactions;
+//private:
+    JSBSim::FGFDMExec* fdmex;
+    std::shared_ptr<JSBSim::FGInitialCondition> fgic;
+    std::shared_ptr<JSBSim::FGAtmosphere> Atmosphere;
+    std::shared_ptr<JSBSim::FGWinds> Winds;
+    std::shared_ptr<JSBSim::FGFCS> FCS;
+    std::shared_ptr<JSBSim::FGPropulsion> Propulsion;
+    std::shared_ptr<JSBSim::FGMassBalance> MassBalance;
+    std::shared_ptr<JSBSim::FGAircraft> Aircraft;
+    std::shared_ptr<JSBSim::FGPropagate> Propagate;
+    std::shared_ptr<JSBSim::FGAuxiliary> Auxiliary;
+    std::shared_ptr<JSBSim::FGAerodynamics> Aerodynamics;
+    std::shared_ptr<JSBSim::FGGroundReactions> GroundReactions;
     //JSBSim::FGInertial*        Inertial;
     //JSBSim::FGAccelerations*   Accelerations;
     JSBSim::FGPropertyManager* PropertyManager;

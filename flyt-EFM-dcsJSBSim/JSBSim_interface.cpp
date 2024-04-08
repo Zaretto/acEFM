@@ -1,5 +1,6 @@
 #include <stdafx.h>
 #include <cstdlib>    //    size_t
+#include <stdlib.h>  
 #include <string>
 #include <sstream>
 #include <iomanip>
@@ -259,19 +260,22 @@ FGJSBsim::FGJSBsim(double dt)
         fdmex->Setdt(0.006);
     fdmex->Setdt(0.006);//TODO: Fix dt
     std::string aircraft_model("efm-aero");
-    std::string aircraft_path = root_folder + ("/EFM");
-    std::string engine_path = root_folder + ("/EFM/engines");
-    std::string systems_path = root_folder + ("/EFM/systems");
+    auto aircraft_path = SGPath(root_folder + ("/EFM"));
+    auto engine_path = SGPath(root_folder + ("/EFM/engines"));
+    auto systems_path = SGPath(root_folder + ("/EFM/systems"));
 
     FGXMLFileRead XMLFileRead;
-    auto config_file = root_folder + "\\aceFMconfig.xml";
+    auto config_file = SGPath(root_folder + "\\aceFMconfig.xml");
     
     SG_LOG(SG_FLIGHT, SG_INFO, "Config from " << config_file);
 
     PropsVisitor v(PropertyManager->GetNode(), "");
     Element* document = XMLFileRead.LoadXMLDocument(config_file, v);
     aircraft_model = PropertyManager->GetNode()->GetString("/sim/aero", aircraft_model);
-
+    
+    auto debugNode = PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-level");
+    if (debugNode != nullptr)
+        fdmex->debug_lvl = debugNode->getIntValue();
     result = fdmex->LoadModel(aircraft_path, engine_path, systems_path, aircraft_model, false);
     Wingspan = fgGetDouble("/fdm/jsbsim/metrics/bw-ft");
     Wingchord = fgGetDouble("/fdm/jsbsim/metrics/cbarw-ft"); 
@@ -527,29 +531,7 @@ void FGJSBsim::update(double dt)
 //        fdmex->GetPropagate()->DumpState();
         update_external_forces(fdmex->GetSimTime() + i * fdmex->GetDeltaT());
     }
-    FGJSBBase::Message* msg;
-    while ((msg = fdmex->ProcessNextMessage()) != NULL) {
-        //      msg = fdmex->ProcessNextMessage();
-        switch (msg->type) {
-        case FGJSBBase::Message::eText:
-            if (msg->text == "Crash Detected: Simulation FREEZE.")
-                crashed = true;
-            SG_LOG(SG_FLIGHT, SG_INFO, msg->messageId << ": " << msg->text);
-            break;
-        case FGJSBBase::Message::eBool:
-            SG_LOG(SG_FLIGHT, SG_INFO, msg->messageId << ": " << msg->text << " " << msg->bVal);
-            break;
-        case FGJSBBase::Message::eInteger:
-            SG_LOG(SG_FLIGHT, SG_INFO, msg->messageId << ": " << msg->text << " " << msg->iVal);
-            break;
-        case FGJSBBase::Message::eDouble:
-            SG_LOG(SG_FLIGHT, SG_INFO, msg->messageId << ": " << msg->text << " " << msg->dVal);
-            break;
-        default:
-            SG_LOG(SG_FLIGHT, SG_INFO, "Unrecognized message type.");
-            break;
-        }
-    }
+  
 
     //// translate JSBsim back to FG structure so that the
     //// autopilot (and the rest of the sim can use the updated values
@@ -1216,10 +1198,9 @@ bool FGJSBsim::ToggleDataLogging(bool state)
 
 void FGJSBsim::init_gear(void)
 {
-    FGGroundReactions* gr = fdmex->GetGroundReactions();
     int Ngear = GroundReactions->GetNumGearUnits();
     for (int i = 0; i<Ngear; i++) {
-        FGLGear *gear = gr->GetGearUnit(i);
+        auto gear = GroundReactions->GetGearUnit(i);
         SGPropertyNode * node = PropertyManager->GetNode("gear/gear", i, true);
         node->setDoubleValue("xoffset-in", gear->GetBodyLocation()(1) * 12);
         node->setDoubleValue("yoffset-in", gear->GetBodyLocation()(2) * 12);
@@ -1238,10 +1219,9 @@ void FGJSBsim::init_gear(void)
 
 void FGJSBsim::update_gear(void)
 {
-    FGGroundReactions* gr = fdmex->GetGroundReactions();
     int Ngear = GroundReactions->GetNumGearUnits();
     for (int i = 0; i<Ngear; i++) {
-        FGLGear *gear = gr->GetGearUnit(i);
+        auto gear = GroundReactions->GetGearUnit(i);
         SGPropertyNode * node = PropertyManager->GetNode("gear/gear", i, true);
         node->getChild("wow", 0, true)->setBoolValue(gear->GetWOW());
         node->getChild("rollspeed-ms", 0, true)->setDoubleValue(gear->GetWheelRollVel()*0.3043);
