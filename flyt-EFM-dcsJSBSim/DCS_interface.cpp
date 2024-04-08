@@ -46,7 +46,7 @@ double wing_span_m = 6.68;
 double wing_chord_m = 2.605;
 
 int frame_count = 0;
-void nullf() {};
+int nullf() { return 0; }
 
 static std::map<std::string, double> conversion_map = {
 {"METER_TO_FEET", 3.28084},
@@ -65,10 +65,11 @@ static std::map<std::string, double> conversion_map = {
 
 void DCS_interface::initialize(FGJSBsim * _model)
 {
-    printf("DCS_interface Initialize\n");
+    printf("acEFM: DCS_interface Initialize\n");
     // cockpit base dll
     HMODULE cockpit_base_dll = GetModuleHandle(L"CockpitBase.dll");	//assume that we work inside same process
     if (cockpit_base_dll == NULL)
+
     {
         std::cout << "cockpit base dll not found\n";
         cockpit_param.pfn_ed_cockpit_get_parameter_handle = (PFN_ED_COCKPIT_GET_PARAMETER_HANDLE)nullf;
@@ -139,9 +140,9 @@ void DCS_interface::simulate(double dt)
     frame_count++;
     if (frame_count > 50)
     {
-        local_debug = model->fgGetDouble("/fdm/jsbsim/a/debug");
-        use_metric_forces = model->fgGetDouble("/fdm/jsbsim/a/metric_forces");
-        use_metric_moments = model->fgGetDouble("/fdm/jsbsim/a/metric_moments");
+        local_debug = model->fgGetDouble("/fdm/jsbsim/acefm/debug");
+        use_metric_forces = model->fgGetDouble("/fdm/jsbsim/acefm/metric_forces");
+        use_metric_moments = model->fgGetDouble("/fdm/jsbsim/acefm/metric_moments");
         frame_count = 0;
     }
 
@@ -446,6 +447,9 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
     {
         MessageBoxA(0, ex.c_str(), "JSBSimEFM: Exception", 0);
         exit(0);
+    } catch (const char *ex) {
+        MessageBoxA(0, ex, "JSBSimEFM: Exception", 0);
+        exit(0);
     }
     catch (...)
     {
@@ -696,7 +700,7 @@ void ed_fm_configure(const char * cfg_path)
 {
 }
 
-void ed_fm_set_plugin_data_install_path(const char * cfg_path)
+void ed_fm_set_plugin_data_install_path(const char* cfg_path)
 {
     printf("ed_fm_set_plugin_data_install_path: %s\n", cfg_path);
     root_folder = std::string(cfg_path);
