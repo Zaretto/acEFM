@@ -66,41 +66,39 @@ static std::map<std::string, double> conversion_map = {
 void DCS_interface::initialize(FGJSBsim * _model)
 {
     printf("acEFM: DCS_interface Initialize\n");
-    // cockpit base dll
-    HMODULE cockpit_base_dll = GetModuleHandle(L"CockpitBase.dll");	//assume that we work inside same process
-    if (cockpit_base_dll == NULL)
-
-    {
-        std::cout << "cockpit base dll not found\n";
-        cockpit_param.pfn_ed_cockpit_get_parameter_handle = (PFN_ED_COCKPIT_GET_PARAMETER_HANDLE)nullf;
-        cockpit_param.pfn_ed_cockpit_update_parameter_with_number = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_NUMBER)nullf;
-        cockpit_param.pfn_ed_cockpit_update_parameter_with_string = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_STRING)nullf;
-        cockpit_param.pfn_ed_cockpit_parameter_value_to_number = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_NUMBER)nullf;
-        cockpit_param.pfn_ed_cockpit_parameter_value_to_string = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_STRING)nullf;
-    }
-    else
-    {
-        std::cout << "found cockpit base dll\n";
-        cockpit_param.pfn_ed_cockpit_get_parameter_handle = (PFN_ED_COCKPIT_GET_PARAMETER_HANDLE)GetProcAddress(cockpit_base_dll, "ed_cockpit_get_parameter_handle");
-        cockpit_param.pfn_ed_cockpit_update_parameter_with_number = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_NUMBER)GetProcAddress(cockpit_base_dll, "ed_cockpit_update_parameter_with_number");
-        cockpit_param.pfn_ed_cockpit_update_parameter_with_string = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_STRING)GetProcAddress(cockpit_base_dll, "ed_cockpit_update_parameter_with_string");
-        cockpit_param.pfn_ed_cockpit_parameter_value_to_number = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_NUMBER)GetProcAddress(cockpit_base_dll, "ed_cockpit_parameter_value_to_number");
-        cockpit_param.pfn_ed_cockpit_parameter_value_to_string = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_STRING)GetProcAddress(cockpit_base_dll, "ed_cockpit_parameter_value_to_string");
-        ed_cockpit_set_draw_argument = (PFN_ED_COCKPIT_SET_DRAW_ARGUMENT)GetProcAddress(cockpit_base_dll, "ed_cockpit_set_draw_argument");
-
-        std::cout << "trying to get test param handle wth function at:\n";
-        std::cout << cockpit_param.pfn_ed_cockpit_get_parameter_handle << "\n";
-
-        if (cockpit_param.pfn_ed_cockpit_get_parameter_handle == NULL)
-        {
-            std::cout << GetLastError() << "\n";
-        }
-    }
-    //TODO: make this part of the constructor and possible include all of the cockpit.dll setup from above.
-    cockpit.Connect(cockpit_param);
 
     auto cockpitNode = _model->PropertyManager->GetNode("sim/cockpit");
     if (cockpitNode != nullptr) {
+        // cockpit base dll
+        HMODULE cockpit_base_dll = GetModuleHandle(L"CockpitBase.dll"); //assume that we work inside same process
+        if (cockpit_base_dll == NULL)
+
+        {
+            std::cout << "cockpit base dll not found\n";
+            cockpit_param.pfn_ed_cockpit_get_parameter_handle = (PFN_ED_COCKPIT_GET_PARAMETER_HANDLE)nullf;
+            cockpit_param.pfn_ed_cockpit_update_parameter_with_number = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_NUMBER)nullf;
+            cockpit_param.pfn_ed_cockpit_update_parameter_with_string = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_STRING)nullf;
+            cockpit_param.pfn_ed_cockpit_parameter_value_to_number = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_NUMBER)nullf;
+            cockpit_param.pfn_ed_cockpit_parameter_value_to_string = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_STRING)nullf;
+        } else {
+            std::cout << "found cockpit base dll\n";
+            cockpit_param.pfn_ed_cockpit_get_parameter_handle = (PFN_ED_COCKPIT_GET_PARAMETER_HANDLE)GetProcAddress(cockpit_base_dll, "ed_cockpit_get_parameter_handle");
+            cockpit_param.pfn_ed_cockpit_update_parameter_with_number = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_NUMBER)GetProcAddress(cockpit_base_dll, "ed_cockpit_update_parameter_with_number");
+            cockpit_param.pfn_ed_cockpit_update_parameter_with_string = (PFN_ED_COCKPIT_UPDATE_PARAMETER_WITH_STRING)GetProcAddress(cockpit_base_dll, "ed_cockpit_update_parameter_with_string");
+            cockpit_param.pfn_ed_cockpit_parameter_value_to_number = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_NUMBER)GetProcAddress(cockpit_base_dll, "ed_cockpit_parameter_value_to_number");
+            cockpit_param.pfn_ed_cockpit_parameter_value_to_string = (PFN_ED_COCKPIT_PARAMETER_VALUE_TO_STRING)GetProcAddress(cockpit_base_dll, "ed_cockpit_parameter_value_to_string");
+            ed_cockpit_set_draw_argument = (PFN_ED_COCKPIT_SET_DRAW_ARGUMENT)GetProcAddress(cockpit_base_dll, "ed_cockpit_set_draw_argument");
+
+            std::cout << "trying to get test param handle wth function at:\n";
+            std::cout << cockpit_param.pfn_ed_cockpit_get_parameter_handle << "\n";
+
+            if (cockpit_param.pfn_ed_cockpit_get_parameter_handle == NULL) {
+                std::cout << GetLastError() << "\n";
+            }
+        }
+        //TODO: make this part of the constructor and possible include all of the cockpit.dll setup from above.
+        cockpit.Connect(cockpit_param);
+
         for (auto gauge : cockpitNode->getChildren("gauge")) {
             auto param = gauge->getStringValue("param");
             auto prop = gauge->getStringValue("property");
@@ -202,16 +200,27 @@ void ed_fm_set_draw_args(EdDrawArgument * drawargs, size_t size)
 
 double ed_fm_get_param(unsigned index)
 {
-    FGJSBsim *model = get_model();
-    if (index <= ED_FM_END_ENGINE_BLOCK)
-    {
-        switch (index)
-        {
+    FGJSBsim* model = get_model();
+    if (index <= ED_FM_END_ENGINE_BLOCK) {
+        switch (index) {
+        case ED_FM_SUSPENSION_0_GEAR_POST_STATE:
+        case ED_FM_SUSPENSION_0_DOWN_LOCK:
+        case ED_FM_SUSPENSION_0_UP_LOCK:
+            return model->fgGetDouble("/fdm/jsbsim/gear/unit[0]/pos-norm");
+        case ED_FM_SUSPENSION_1_GEAR_POST_STATE:
+        case ED_FM_SUSPENSION_1_DOWN_LOCK:
+        case ED_FM_SUSPENSION_1_UP_LOCK:
+            return model->fgGetDouble("/fdm/jsbsim/gear/unit[1]/pos-norm");
+        case ED_FM_SUSPENSION_2_GEAR_POST_STATE:
+        case ED_FM_SUSPENSION_2_DOWN_LOCK:
+        case ED_FM_SUSPENSION_2_UP_LOCK:
+            return model->fgGetDouble("/fdm/jsbsim/gear/unit[2]/pos-norm");
+
         case ED_FM_ENGINE_0_RPM:
         case ED_FM_ENGINE_0_RELATED_RPM:
         case ED_FM_ENGINE_0_THRUST:
         case ED_FM_ENGINE_0_RELATED_THRUST:
-            return 0;		// APU
+            return 0; // APU
         case ED_FM_ENGINE_1_RPM:
             return model->fgGetDouble("/fdm/jsbsim/propulsion/engine[0]/n1") * 120;
         case ED_FM_ENGINE_1_RELATED_RPM:
@@ -221,15 +230,12 @@ double ed_fm_get_param(unsigned index)
         case ED_FM_ENGINE_1_RELATED_THRUST:
             return 0;
         }
-    }
-    else if (index >= ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT &&
-        index < ED_FM_OXYGEN_SUPPLY)
-    {
+    } else if (index >= ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT &&
+               index < ED_FM_OXYGEN_SUPPLY) {
         static const int block_size =
             ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT -
             ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
-        switch (index)
-        {
+        switch (index) {
         case 0 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
             //return A37::Systems::Gear::noseGearValue;
         case 1 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
@@ -238,86 +244,83 @@ double ed_fm_get_param(unsigned index)
             //return A37::Systems::Gear::rightGearValue;
             return 0;
         }
-    }
-    else switch (index)
-    {
-        //ED_FM_CAN_ACCEPT_FUEL_FROM_TANKER,// return positive value if all conditions are matched to connect to tanker and get fuel
-//ED_FM_ENGINE_1_RPM = 100,
-//ED_FM_ENGINE_1_RELATED_RPM,
-//ED_FM_ENGINE_1_CORE_RPM,
-//ED_FM_ENGINE_1_CORE_RELATED_RPM,
-//ED_FM_ENGINE_1_THRUST,
-//ED_FM_ENGINE_1_RELATED_THRUST,
-//ED_FM_ENGINE_1_CORE_THRUST,
-//ED_FM_ENGINE_1_CORE_RELATED_THRUST,
-//
-//ED_FM_PROPELLER_1_RPM,    // propeller RPM , for helicopter it is main rotor RPM
-//ED_FM_PROPELLER_1_PITCH,  // propeller blade pitch
-//ED_FM_PROPELLER_1_TILT,   // for helicopter
-//ED_FM_PROPELLER_1_INTEGRITY_FACTOR,   // for 0 to 1 , 0 is fully broken , 
-//
-//ED_FM_ENGINE_1_TEMPERATURE,//Celcius
-//ED_FM_ENGINE_1_OIL_PRESSURE,
-//ED_FM_ENGINE_1_FUEL_FLOW,
-//ED_FM_ENGINE_1_COMBUSTION,//level of combustion for engine  , 0 - 1
-//
-//ED_FM_PISTON_ENGINE_1_MANIFOLD_PRESSURE,
-//ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT,
-//ED_FM_SUSPENSION_0_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
-//ED_FM_SUSPENSION_0_UP_LOCK,
-//ED_FM_SUSPENSION_0_DOWN_LOCK,
-//ED_FM_SUSPENSION_0_WHEEL_YAW,
-//ED_FM_SUSPENSION_0_WHEEL_SELF_ATTITUDE,
-//
-//ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT = ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT + 10,
-//ED_FM_SUSPENSION_1_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
-//ED_FM_SUSPENSION_1_UP_LOCK,
-//ED_FM_SUSPENSION_1_DOWN_LOCK,
-//ED_FM_SUSPENSION_1_WHEEL_YAW,
-//ED_FM_SUSPENSION_1_WHEEL_SELF_ATTITUDE,
-//
-//
-//ED_FM_SUSPENSION_2_RELATIVE_BRAKE_MOMENT = ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT + (ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT),
-//ED_FM_SUSPENSION_2_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
-//ED_FM_SUSPENSION_2_UP_LOCK,
-//ED_FM_SUSPENSION_2_DOWN_LOCK,
-//ED_FM_SUSPENSION_2_WHEEL_YAW,
-//ED_FM_SUSPENSION_2_WHEEL_SELF_ATTITUDE,
+    } else
+        switch (index) {
+            //ED_FM_CAN_ACCEPT_FUEL_FROM_TANKER,// return positive value if all conditions are matched to connect to tanker and get fuel
+            //ED_FM_ENGINE_1_RPM = 100,
+            //ED_FM_ENGINE_1_RELATED_RPM,
+            //ED_FM_ENGINE_1_CORE_RPM,
+            //ED_FM_ENGINE_1_CORE_RELATED_RPM,
+            //ED_FM_ENGINE_1_THRUST,
+            //ED_FM_ENGINE_1_RELATED_THRUST,
+            //ED_FM_ENGINE_1_CORE_THRUST,
+            //ED_FM_ENGINE_1_CORE_RELATED_THRUST,
+            //
+            //ED_FM_PROPELLER_1_RPM,    // propeller RPM , for helicopter it is main rotor RPM
+            //ED_FM_PROPELLER_1_PITCH,  // propeller blade pitch
+            //ED_FM_PROPELLER_1_TILT,   // for helicopter
+            //ED_FM_PROPELLER_1_INTEGRITY_FACTOR,   // for 0 to 1 , 0 is fully broken ,
+            //
+            //ED_FM_ENGINE_1_TEMPERATURE,//Celcius
+            //ED_FM_ENGINE_1_OIL_PRESSURE,
+            //ED_FM_ENGINE_1_FUEL_FLOW,
+            //ED_FM_ENGINE_1_COMBUSTION,//level of combustion for engine  , 0 - 1
+            //
+            //ED_FM_PISTON_ENGINE_1_MANIFOLD_PRESSURE,
+            //ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT,
+            //ED_FM_SUSPENSION_0_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
+            //ED_FM_SUSPENSION_0_UP_LOCK,
+            //ED_FM_SUSPENSION_0_DOWN_LOCK,
+            //ED_FM_SUSPENSION_0_WHEEL_YAW,
+            //ED_FM_SUSPENSION_0_WHEEL_SELF_ATTITUDE,
+            //
+            //ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT = ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT + 10,
+            //ED_FM_SUSPENSION_1_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
+            //ED_FM_SUSPENSION_1_UP_LOCK,
+            //ED_FM_SUSPENSION_1_DOWN_LOCK,
+            //ED_FM_SUSPENSION_1_WHEEL_YAW,
+            //ED_FM_SUSPENSION_1_WHEEL_SELF_ATTITUDE,
+            //
+            //
+            //ED_FM_SUSPENSION_2_RELATIVE_BRAKE_MOMENT = ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT + (ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT),
+            //ED_FM_SUSPENSION_2_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
+            //ED_FM_SUSPENSION_2_UP_LOCK,
+            //ED_FM_SUSPENSION_2_DOWN_LOCK,
+            //ED_FM_SUSPENSION_2_WHEEL_YAW,
+            //ED_FM_SUSPENSION_2_WHEEL_SELF_ATTITUDE,
 
             //    ED_FM_FUEL_FUEL_TANK_GROUP_0_LEFT,			// Values from different group of tanks
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_0_RIGHT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_1_LEFT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_1_RIGHT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_2_LEFT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_2_RIGHT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_3_LEFT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_3_RIGHT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_4_LEFT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_4_RIGHT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_5_LEFT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_5_RIGHT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_6_LEFT,
-        //    ED_FM_FUEL_FUEL_TANK_GROUP_6_RIGHT,
-        //    ED_FM_FUEL_INTERNAL_FUEL,
-        //    ED_FM_FUEL_TOTAL_FUEL,
-        //    ED_FM_FUEL_LOW_SIGNAL,						// Low fuel signal
-//        ED_FM_ANTI_SKID_ENABLE,// return positive value if anti skid system is on , it also corresspond with suspension table "anti_skid_installed"  parameter for each gear post .i.e
-    case ED_FM_FLOW_VELOCITY:
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_0_RIGHT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_1_LEFT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_1_RIGHT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_2_LEFT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_2_RIGHT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_3_LEFT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_3_RIGHT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_4_LEFT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_4_RIGHT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_5_LEFT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_5_RIGHT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_6_LEFT,
+            //    ED_FM_FUEL_FUEL_TANK_GROUP_6_RIGHT,
+            //    ED_FM_FUEL_INTERNAL_FUEL,
+            //    ED_FM_FUEL_TOTAL_FUEL,
+            //    ED_FM_FUEL_LOW_SIGNAL,						// Low fuel signal
+            //        ED_FM_ANTI_SKID_ENABLE,// return positive value if anti skid system is on , it also corresspond with suspension table "anti_skid_installed"  parameter for each gear post .i.e
+        case ED_FM_FLOW_VELOCITY:
             break;
-    case ED_FM_OXYGEN_SUPPLY: // oxygen provided from on board oxygen system, pressure - pascal)
-        break;
+        case ED_FM_OXYGEN_SUPPLY: // oxygen provided from on board oxygen system, pressure - pascal)
+            break;
 
-    // additional pressure from pressurization system , pascal , actual cabin pressure will be AtmoPressure + COCKPIT_PRESSURIZATION_OVER_EXTERNAL
-    case ED_FM_COCKPIT_PRESSURIZATION_OVER_EXTERNAL:
-    {
-        double cabin_alt = model->fgGetDouble("/fdm/jsbsim/systems/ecs/cabin-altitude-ft");
-        double cabin_pressure = model->get_pressure_at_atltiude_lbf_ft2(cabin_alt);
-        double diff = (cabin_pressure - model->get_atmosphere_pressure_lbf_ft2()) / PA_TO_LBF_FT2;
-        //        printf("cabin alt: %.1f pres %.1f ext %.1f diff %.1f \n", cabin_alt, cabin_pressure, model->get_atmosphere_pressure_lbf_ft2(), diff);
-        return diff;
-    }
-    break;
-    }
+        // additional pressure from pressurization system , pascal , actual cabin pressure will be AtmoPressure + COCKPIT_PRESSURIZATION_OVER_EXTERNAL
+        case ED_FM_COCKPIT_PRESSURIZATION_OVER_EXTERNAL: {
+            double cabin_alt = model->fgGetDouble("/fdm/jsbsim/systems/ecs/cabin-altitude-ft");
+            double cabin_pressure = model->get_pressure_at_atltiude_lbf_ft2(cabin_alt);
+            double diff = (cabin_pressure - model->get_atmosphere_pressure_lbf_ft2()) / PA_TO_LBF_FT2;
+            //        printf("cabin alt: %.1f pres %.1f ext %.1f diff %.1f \n", cabin_alt, cabin_pressure, model->get_atmosphere_pressure_lbf_ft2(), diff);
+            return diff;
+        } break;
+        }
     return 0;
 }
 
