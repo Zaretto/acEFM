@@ -156,50 +156,75 @@ extern "C" {
 
     DLL_API void ed_fm_set_command(int command, float value);
 }
-
-class CockpitItem
+template <typename T, typename T1> class AnimateItem
 {
 protected:
-    void*  Handle;
-    std::string Name;
+    const int NO_CHANGE = -10000000.0;
+    T Handle;
     JSBSim::FGPropertyNode* input_node;
-    double Factor;
-    double LastVal;
+    T1 Factor;
+    T1 Value, Delta;
     int c;
+    std::string Property;
+
 public:
-    CockpitItem() : Handle(0), Name(), input_node(nullptr), LastVal(-10000000.0), Factor(1.0), c(0) {    }
-    CockpitItem(void *handle, FGJSBsim* model, std::string name,  std::string prop, double factor) : Handle(handle), Name(name), Factor(factor)
+    AnimateItem() : Handle(0), Name(), input_node(nullptr), LastVal(-10000000.0), Factor(1.0), c(0), Delta(0.0001) {}
+    AnimateItem(T handle, JSBSim::FGPropertyNode* input_node, std::string prop, T1 factor, T1 delta) 
+        : Handle(handle), Factor(factor), input_node(input_node), Delta(delta), Property(prop)
     {
-        input_node = model->PropertyManager->GetNode(prop);
-        LastVal = -10000000.0;
+        Value = NO_CHANGE;
         c = 0;
     }
-    virtual void Update(cockpit_param_api api, FGJSBsim *model)
+    T Get() { return Handle; }
+    virtual const std::string& GetProperty() const { return Property; }
+    virtual T1 GetValue() { return Value; }
+    virtual T1 GetTransformedValue() { return Value * Factor; }
+    bool UpdateNeeded()
     {
-        if (!Handle)
-        {
+        if (input_node != nullptr) {
+            auto newValue = input_node->getDoubleValue();
+            bool rv = std::abs(Value - newValue) >= Delta;
+
+            if (rv)
+                Value = newValue;
+
+            return rv;
+        }
+        return false;
+    }
+};
+
+class CockpitItem : public AnimateItem<void*, double>
+{
+protected:
+    std::string Name;
+    JSBSim::FGPropertyNode* DebugNode;
+
+
+public:
+    CockpitItem(void *handle, FGJSBsim* model, std::string name, std::string prop, double factor, double delta) 
+        : AnimateItem<void*, double>(handle, model->PropertyManager->GetNode(prop), prop, factor, delta), Name(name)
+    {
+        DebugNode = model->PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-cockpit-params", true);
+    }
+    virtual void Update(cockpit_param_api api, FGJSBsim* model)
+    {
+        if (!Handle) {
             if (!c)
                 printf("CockpitItem:: %s has no handle\n", Name.c_str());
             c = 1;
             return;
         }
-        if (api.pfn_ed_cockpit_update_parameter_with_number)
-        {
-            if (input_node != nullptr)
-            {
-                double val = input_node->getDoubleValue();
-                //    if (val != LastVal)
-                {
-                    //if (!c)
-                    //    printf("CockpitItem:: update %s:%s -> %.1f\n", Name.c_str(), Property.c_str(), val*Factor);
-                    //c++;
-                    api.pfn_ed_cockpit_update_parameter_with_number(Handle, val * Factor);
-                    LastVal = val;
-                }
-                //else if (c) 
-                    //c++;
-                //if (c > 300)c = 0;
-            }
+        if (api.pfn_ed_cockpit_update_parameter_with_number == nullptr) {
+            printf("CockpitItem::API pfn_ed_cockpit_update_parameter_with_number invalid\n");
+            return;
+        }
+
+        if (UpdateNeeded()) {
+            double val = GetTransformedValue();
+            if (DebugNode != nullptr && DebugNode->getBoolValue())
+                printf("CockpitItem:: update %s:%s -> %.1f\n", Name.c_str(), Property.c_str(), val*Factor);
+            api.pfn_ed_cockpit_update_parameter_with_number(Handle, val);
         }
     }
 };
@@ -208,8 +233,8 @@ class LinearActuator : public CockpitItem
 {
     enum class ActuatorType { ActuatorTypeNone, GenevaDrive, LinearDrive} ActuatorType;
 public:
-    LinearActuator(FGJSBsim* model, void* Handle, const std::string &name,  const std::string &prop, const std::string &type, double factor)
-        :CockpitItem(Handle, model, name, prop, factor)
+    LinearActuator(FGJSBsim* model, void* Handle, const std::string &name,  const std::string &prop, const std::string &type, double factor, double delta=0.0001)
+        :CockpitItem(Handle, model, name, prop, factor, delta)
     {
         if (type.c_str() == std::string("GenevaDrive"))
             ActuatorType = ActuatorType::GenevaDrive;
@@ -220,34 +245,31 @@ public:
             SG_LOG(SG_FLIGHT, SG_ALERT, "Unknown type for Linear Actuator " << type << " for actuator " << name);
         }
     }
-    double getV(double value) {
+    double GetGenevaDriveValue() 
+    {
         double scroll = floor(Factor / 10.0);
-        double v1 = floor(value / Factor) * Factor;
-        double v2 = floor(value - Factor);
+        double v1 = floor(Value / Factor) * Factor;
+        double v2 = floor(Value - Factor);
         double v3 = scroll - (v1 - v2);
         double incr = max(0.0, v3);
-        return fmod(floor(value / Factor), 10) / 10.0
-            + (incr / Factor);
+        return fmod(floor(Value / Factor), 10) / 10.0 + (incr / Factor);
     }
     virtual void Update(cockpit_param_api api, FGJSBsim* model)
     {
-        if (input_node) {
-            double value = input_node->getDoubleValue();
-            
+        if (UpdateNeeded()) {
+            double value = GetValue();
+
             // now convert
             switch (ActuatorType) {
             case ActuatorType::GenevaDrive:
-                value = getV(value);
+                value = GetGenevaDriveValue();
                 break;
 
             case ActuatorType::LinearDrive:
                 value = fmod(value, 1000) / 10.0;
                 break;
             }
-            if (value != LastVal) {
-                api.pfn_ed_cockpit_update_parameter_with_number(Handle, value);
-                LastVal = value;
-            }
+            api.pfn_ed_cockpit_update_parameter_with_number(Handle, value);
         }
     }
 };
@@ -274,14 +296,14 @@ public:
             printf("Cannot locate %s - no connection to cockpit\n", param.c_str());
         return 0;
     }
-    void AddItem(FGJSBsim* model, std::string param, std::string prop, double factor = 1.0)
+    void AddItem(FGJSBsim* model, std::string param, std::string prop, double factor = 1.0, double delta=0.0001)
     {
         void *handle = FindHandle(param);
 
         if (handle)
         {
             printf("CockpitItem:: %s -> %s (%.1f) == $%x\n", param.c_str(), prop.c_str(), factor, handle);
-            items.push_back(new CockpitItem(handle, model, param, prop, factor));
+            items.push_back(new CockpitItem(handle, model, param, prop, factor, delta));
         }
         else
             printf("Cockpit:: failed to locate parameter_name %s\n", param.c_str());
@@ -463,10 +485,51 @@ const std::map<string, int>::value_type enumMap[] = {
     map<string, int>::value_type("ED_FM_EVENT_FIqRE", 3),
     map<string, int>::value_type("ED_FM_EVENT_CARRIER_CATAPULT", 4),
 };
+class DrawArguments
+{
+protected:
+    std::vector<AnimateItem<int, float>*> items;
+    FGJSBsim* model;
+    JSBSim::FGPropertyNode* DebugNode;
+
+public:
+    DrawArguments(FGJSBsim* model) : model(model)
+    {
+        DebugNode = model->PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-draw-args", true);
+    }
+    void AddItem(AnimateItem<int, float>* ci)
+    {
+        items.push_back(ci);
+    }
+
+    void AddItem(int drawArgId, std::string prop, float factor, float delta)
+    {
+        printf("DrawArg:: %d -> %s (%.1f) ~%.4f\n", drawArgId, prop.c_str(), factor, delta);
+        items.push_back(new AnimateItem<int, float>(drawArgId, model->PropertyManager->GetNode(prop), prop, factor, delta));
+    }
+    void Update(FGJSBsim* model, EdDrawArgument* da, size_t size)
+    {
+        for (auto&& item : items) {
+            if (item->UpdateNeeded()) {
+                auto drawArgId = item->Get();
+                if (drawArgId >= size) {
+                    printf("DrawArg:: %d invalid (max %d)\n", drawArgId, size);
+                } else {
+                    auto value = item->GetValue();
+                    da[drawArgId].f = value;
+                    if (DebugNode != nullptr && DebugNode->getBoolValue())
+                        printf("DrawArg:: %d = %.4f [%s]\n", drawArgId, value, item->GetProperty().c_str());
+                }
+            }
+        }
+    }
+};
 class DCS_interface
 {
 public:
     Cockpit cockpit;
+    DrawArguments drawArguments;
+
     DCS_interface();
     ~DCS_interface();
     void initialize(FGJSBsim *model);

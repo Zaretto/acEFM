@@ -8,7 +8,9 @@ Vec3d center_of_mass;                    // m
 Vec3d common_moment;                     // kg/m^2
 Vec3d common_force;                      // N
 
-DCS_interface::DCS_interface()
+extern FGJSBsim* get_model();
+
+DCS_interface::DCS_interface() : drawArguments(get_model())
 {
 }
 
@@ -20,7 +22,6 @@ DCS_interface::~DCS_interface()
 /* main loop function, called every 6ms, all calculations done in here */
 
 
-extern FGJSBsim *get_model();
 
 cockpit_param_api cockpit_param;
 PFN_ED_COCKPIT_SET_DRAW_ARGUMENT ed_cockpit_set_draw_argument;
@@ -67,6 +68,16 @@ void DCS_interface::initialize(FGJSBsim * _model)
 {
     printf("acEFM: DCS_interface Initialize\n");
 
+    auto drawArgNode = _model->PropertyManager->GetNode("sim/animations");
+    if (drawArgNode != nullptr) {
+        for (auto drawarg : drawArgNode->getChildren("drawarg")) {
+            auto prop = drawarg->getStringValue("property");
+            auto factor = drawarg->getFloatValue("factor", 1.0);
+            auto delta = drawarg->getFloatValue("delta", 0.0001);
+            drawArguments.AddItem(drawarg->getIndex(), prop, factor, delta);
+            ;
+        }
+    }
     auto cockpitNode = _model->PropertyManager->GetNode("sim/cockpit");
     if (cockpitNode != nullptr) {
         // cockpit base dll
@@ -103,6 +114,7 @@ void DCS_interface::initialize(FGJSBsim * _model)
             auto param = gauge->getStringValue("param");
             auto prop = gauge->getStringValue("property");
             auto factor = gauge->getDoubleValue("factor", 1.0);
+            auto delta = gauge->getDoubleValue("delta", 0.0001);
             if (factor == 0) { // factor of 0 makes no sense so it is probably a string lookup
                 auto factor_name = gauge->getStringValue("factor");
                 if (conversion_map.find(factor_name) != conversion_map.end())
@@ -114,7 +126,7 @@ void DCS_interface::initialize(FGJSBsim * _model)
 
             if (type != std::string()) {
                 if (type == std::string("GenevaDrive") || type == std::string("LinearDrive")) {
-                    cockpit.AddItem(new LinearActuator(_model, cockpit.FindHandle(param), param, prop, type, factor));
+                    cockpit.AddItem(new LinearActuator(_model, cockpit.FindHandle(param), param, prop, type, factor, delta));
                 }
                 else
                     SG_LOG(SG_FLIGHT, SG_ALERT, "Unknown gauge type " << type);
@@ -149,54 +161,6 @@ void DCS_interface::simulate(double dt)
         cockpit.Update(model);
     }
 }
-
-
-void ed_fm_set_draw_args(EdDrawArgument * drawargs, size_t size)
-{
-    FGJSBsim *model = get_model();
-
-    //drawargs[11].f = model->fgGetDouble("/fdm/jsbsim/velocities/vc-kts") / 1000.0;
-    //drawargs[28].f = (float)model->get_controls()->get_throttle(0);
-    return;
-
-    if (size > 616)
-    {
-        drawargs[611].f = drawargs[0].f;
-        drawargs[614].f = drawargs[3].f;
-        drawargs[616].f = drawargs[5].f;
-    }
-
-    //// Flaps
-    //drawargs[9].f = (float)model->get_surfaces()->get_slats(0);
-    //drawargs[10].f = (float)model->get_surfaces()->get_slats(1);
-
-    //// Aileron
-    //drawargs[11].f = (float)model->get_surfaces()->get_aileron(0);
-    //drawargs[12].f = (float)model->get_surfaces()->get_aileron(1);
-
-    //// LE Flaps
-    //drawargs[13].f = (float)model->get_surfaces()->get_slats(0);
-    //drawargs[14].f = (float)model->get_surfaces()->get_slats(1);
-
-    //// Elevator
-    //drawargs[15].f = (float)model->get_surfaces()->get_elevator();
-    //drawargs[16].f = (float)model->get_surfaces()->get_elevator();
-
-    //// Rudder
-    //drawargs[17].f = (float)model->get_surfaces()->get_rudder();
-    //drawargs[18].f = (float)model->get_surfaces()->get_rudder();
-
-
-    drawargs[38].f = 0.0;		// cockpit 0 closed 1 opened
-    // altimeter, 10000 96
-    //             1000 24
-    //              100 25
-    //           presur 97
-    drawargs[96].f = model->fgGetDouble("/fdm/jsbsim/velocities/vc-kts") / 100000.0;
-    drawargs[96].f = model->fgGetDouble("/fdm/jsbsim/velocities/vc-kts") / 1000.0;
-
-}
-
 
 double ed_fm_get_param(unsigned index)
 {
@@ -740,7 +704,7 @@ void ed_fm_set_command(int command, float value)
         // -1 full
         //value = (1.0 - value)/2;
         value = (-value + 1.0) / 2.0;
-        //        printf("Throttle %.2f\n", value);
+        printf("Throttle %.2f\n", value);
         model->set_fcs_throttle_cmd_norm(0, value);
         //        model->get_controls()->set_throttle(1, value);
     }

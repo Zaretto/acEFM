@@ -265,7 +265,7 @@ FGJSBsim::FGJSBsim(double dt)
     auto systems_path = SGPath(root_folder + ("/EFM/systems"));
 
     FGXMLFileRead XMLFileRead;
-    auto config_file = SGPath(root_folder + "\\aceFMconfig.xml");
+    auto config_file = SGPath(root_folder + "\\acEFMconfig.xml");
     
     SG_LOG(SG_FLIGHT, SG_INFO, "Config from " << config_file);
 

@@ -35,6 +35,18 @@ FGJSBsim *get_model()
     return model;
 
 }
+void ed_fm_set_draw_args_v2(float* drawargs, size_t size)
+{
+    printf("ed_fm_set_draw_args_v2 %x %d\n", drawargs, size);
+}
+
+void ed_fm_set_draw_args(EdDrawArgument* drawargs, size_t size)
+{
+    FGJSBsim* model = get_model();
+    dcs_i->drawArguments.Update(model, drawargs, size);
+    return;
+}
+
 
 void ed_fm_simulate(double dt) {
     //    FGJSBsim *model = get_model();
