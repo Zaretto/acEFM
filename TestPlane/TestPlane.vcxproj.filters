@@ -37,6 +37,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Xml Include="aceFMconfig.xml" />
+    <Xml Include="acEFMconfig.xml" />
   </ItemGroup>
 </Project>
