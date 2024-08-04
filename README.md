@@ -12,11 +12,11 @@ There must be a config file in the root of your mod; "aceFMconfig.xml" that sets
 acEFM supports the mapping between properties and the cockpit API `(pfn_ed_cockpit_update_parameter_with_number(Handle, val);` 
 
 Nodes as follows
-* <param> node defines the Handle to lookup
-* <property> where the value comes from
-* <factor> optional fixed factor to apply
-* <delta> the amount the property must change before an update is trigged (optional, default 0.0001)
-* <type> defines the type of the node which defines how the property value is handled prior to setting the value on the handle. Currently supported is the default type (nothing special) or `GenevaDrive` which will animation a Geneva Drive for instrument drums. `LinearDrive` is a linear drive. Only the default type is currently fully implemented.
+* `<param>` node defines the Handle to lookup
+* `<property>` where the value comes from
+* `<factor>` optional fixed factor to apply
+* `<delta>` the amount the property must change before an update is trigged (optional, default 0.0001)
+* `<type>` defines the type of the node which defines how the property value is handled prior to setting the value on the handle. Currently supported is the default type (nothing special) or `GenevaDrive` which will animation a Geneva Drive for instrument drums. `LinearDrive` is a linear drive. Only the default type is currently fully implemented.
 
 ```    <!-- bind all cockpit params -->
     <cockpit>
@@ -41,10 +41,10 @@ The config file can contain an `<animation>` node that permits the mapping of dr
 You can define which properties are mapped to the **draw arguments** for your model. These will be set inside `ed_fm_set_draw_args` 
 
 Nodes as follows
-* <param> node defines the Handle to lookup
-* <property> where the value comes from
-* <factor> optional fixed factor to apply
-* <delta> the amount the property must change before an update is trigged (optional, default 0.0001)
+* `<param>` node defines the Handle to lookup
+* `<property>` where the value comes from
+* `<factor>` optional fixed factor to apply
+* `<delta>` the amount the property must change before an update is trigged (optional, default 0.0001)
 
 e.g. for afterburners.
 ```
