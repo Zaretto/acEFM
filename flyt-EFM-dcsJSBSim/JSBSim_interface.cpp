@@ -1567,17 +1567,17 @@ void FGJSBsim::set_roll_pitch_yaw(double roll_rad, double pitch_rad, double yaw_
 
 void FGJSBsim::set_velocities_u_aero_fps(double v)
 {
-    Auxiliary->vAeroUVW(1) = v;
+    Auxiliary->in.vUVW(1) = v;
 }
 
 void FGJSBsim::set_velocities_v_aero_fps(double v)
 {
-    Auxiliary->vAeroUVW(2) = v;
+    Auxiliary->in.vUVW(2) = v;
 }
 
 void FGJSBsim::set_velocities_w_aero_fps(double v)
 {
-    Auxiliary->vAeroUVW(3) = v;
+    Auxiliary->in.vUVW(3) = v;
 }
 
 void FGJSBsim::set_velocities_vt_fps(double v)
@@ -1585,20 +1585,24 @@ void FGJSBsim::set_velocities_vt_fps(double v)
     Auxiliary->Vt = v;
 
 }
+void FGJSBsim::update()
+{
+    Auxiliary->Run(false);
+}
 
 void FGJSBsim::set_velocities_r_aero_rad_sec(double v)
 {
-    Auxiliary->vAeroPQR(3) = v;
+    Auxiliary->in.vPQR(3) = v;
 }
 
 void FGJSBsim::set_velocities_q_aero_rad_sec(double v)
 {
-    Auxiliary->vAeroPQR(2) = v;
+    Auxiliary->in.vPQR(2) = v;
 }
 
 void FGJSBsim::set_velocities_p_aero_rad_sec(double v)
 {
-    Auxiliary->vAeroPQR(1) = v;
+    Auxiliary->in.vPQR(1) = v;
 
 }
 
@@ -1609,17 +1613,31 @@ void FGJSBsim::set_velocities_mach(double v)
 
 void FGJSBsim::set_fcs_elevator_cmd_norm(double v)
 {
-    fgSetDouble("/fdm/jsbsim/fcs/elevator-cmd-norm", v);
-
+    static double ltv = -1000000;
+    if (fabs(v - ltv) > 0.001) {
+        printf("Elevator %.2f\n", v);
+        ltv = v;
+        fgSetDouble("/fdm/jsbsim/fcs/elevator-cmd-norm", v);
+    }
 }
 
 void FGJSBsim::set_fcs_aileron_cmd_norm(double v)
 {
-    fgSetDouble("/fdm/jsbsim/fcs/aileron-cmd-norm", v);
+    static double ltv = -1000000;
+    if (fabs(v - ltv) > 0.001) {
+        printf("Aileron %.2f\n", v);
+        ltv = v;
+        fgSetDouble("/fdm/jsbsim/fcs/aileron-cmd-norm", v);
+    }
 }
 void FGJSBsim::set_fcs_rudder_cmd_norm(double v)
 {
-    fgSetDouble("/fdm/jsbsim/fcs/rudder-cmd-norm", v);
+    static double ltv = -1000000;
+    if (fabs(v - ltv) > 0.001) {
+        printf("Rudder %.2f\n", v);
+        ltv = v;
+        fgSetDouble("/fdm/jsbsim/fcs/rudder-cmd-norm", v);
+    }
 }
 double FGJSBsim::get_pressure_at_atltiude_lbf_ft2(double altitude) const
 {
@@ -1631,11 +1649,27 @@ void FGJSBsim::set_fcs_gear_cmd_norm(double v)
 }
 void FGJSBsim::set_fcs_throttle_cmd_norm(int e, double v)
 {
-    if (e == 0) fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[0]", v);
-    else if (e == 1) fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[1]", v);
-    else if (e == 2) fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[2]", v);
-    else if (e == 3) fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[3]", v);
-    else if (e == 4) fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[4]", v);
+    static double ltv[5] = {
+        -1000000,
+        -1000000,
+        -1000000,
+        -1000000,
+        -1000000,
+    };
+    if (fabs(v - ltv[e]) > 0.001) {
+        printf("Throttle %d %.2f\n",e, v);
+        ltv[e] = v;
+        if (e == 0)
+            fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[0]", v);
+        else if (e == 1)
+            fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[1]", v);
+        else if (e == 2)
+            fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[2]", v);
+        else if (e == 3)
+            fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[3]", v);
+        else if (e == 4)
+            fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[4]", v);
+    }
 }
 void FGJSBsim::set_atmosphere_rho_slugs_ft3(double v)
 {
@@ -1689,7 +1723,117 @@ void FGJSBsim::set_aero_alphadot_rad_sec(double v)
 {
     Auxiliary->bdot = v;
 }
+void FGJSBsim::set_current_state(double ax,	//linear acceleration component in world coordinate system
+    double ay,	//linear acceleration component in world coordinate system
+    double az,	//linear acceleration component in world coordinate system
+    double vx,	//linear velocity component in world coordinate system
+    double vy,	//linear velocity component in world coordinate system
+    double vz,	//linear velocity component in world coordinate system
+    double px,	//center of the body position in world coordinate system
+    double py,	//center of the body position in world coordinate system
+    double pz,	//center of the body position in world coordinate system
+    double omegadotx,	//angular accelearation components in world coordinate system
+    double omegadoty,	//angular accelearation components in world coordinate system
+    double omegadotz,	//angular accelearation components in world coordinate system
+    double omegax,	//angular velocity components in world coordinate system
+    double omegay,	//angular velocity components in world coordinate system
+    double omegaz,	//angular velocity components in world coordinate system
+    double quaternion_x,	//orientation quaternion components in world coordinate system
+    double quaternion_y,	//orientation quaternion components in world coordinate system
+    double quaternion_z,	//orientation quaternion components in world coordinate system
+    double quaternion_w	//orientation quaternion components in world coordinate system
+)
+{
+    Auxiliary->Nx = ax * METERS_TO_FEET;
+    Auxiliary->Nz = ay * METERS_TO_FEET;
+    Auxiliary->Ny = az * METERS_TO_FEET;
+}
+static double Magnitude(double xv, double yv, double zv)
+{
+    return sqrt(xv * xv + yv * yv + zv * zv);
+}
 
+void FGJSBsim::set_current_state_body_axis(
+    double ax, double ay, double az,                      // linear acceleration component in body coordinate system
+    double vx, double vy, double vz,                      // linear velocity component in body coordinate system
+    double wind_vx, double wind_vy, double wind_vz,       // wind linear velocity component in body coordinate system
+    double omegadotx, double omegadoty, double omegadotz, // angular accelearation components in body coordinate system
+    double omegax, double omegay, double omegaz,          // angular velocity components in body coordinate system
+    double yaw, double pitch, double roll,                // radians
+    double alpha_rads,                                    // AoA radians
+    double beta_rads,                                      //AoS radians
+    double dT,
+    double ro_kgm3
+)
+{
+    double Vt_ms = Magnitude(vx - wind_vx, vy - wind_vy, vz - wind_vz);
+    double Vt_fps = Vt_ms * METER_TO_FEET_FACTOR;
+    double VcKts = Vt_fps / 1.68781; //knots to FPS feet per second(fps).
+
+    set_aero_alpha_deg(alpha_rads * RADIANS_TO_DEGREES);
+    set_aero_beta_deg(beta_rads * RADIANS_TO_DEGREES);
+    if (init_body) {
+        double factor = 1.0 / dT;
+        set_aero_alphadot_rad_sec(((last_alpha_rads - alpha_rads)) * factor);
+        set_aero_betadot_rad_sec(((last_beta_rads - beta_rads)) * factor);
+    }
+    last_alpha_rads = alpha_rads;
+    last_beta_rads = beta_rads;
+    init_body = 1;
+
+    //model->set_aero_alphadot_rad_sec(omegadotz);
+    //model->set_aero_betadot_rad_sec(omegadoty);
+
+    set_velocities_p_aero_rad_sec(omegax);  // * DEGREES_TO_RADIANS);
+    set_velocities_q_aero_rad_sec(omegaz);  // * DEGREES_TO_RADIANS);
+    set_velocities_r_aero_rad_sec(-omegay); // * DEGREES_TO_RADIANS);
+
+    set_velocities_u_aero_fps(vx * METER_TO_FEET_FACTOR);
+    set_velocities_v_aero_fps(vz * METER_TO_FEET_FACTOR);
+    set_velocities_w_aero_fps(-vy * METER_TO_FEET_FACTOR);
+
+    /*
+        attitude/phi-deg         attitude/phi-rad         attitude/roll-rad        
+        attitude/theta-deg       attitude/pitch-rad       attitude/theta-rad        
+        attitude/psi-deg         attitude/psi-rad
+    */
+
+    // include the effects of wind at this point on the velocities to get the overall forward velocity through the air mass.
+
+    set_velocities_vt_fps(Vt_fps);
+    UpdateWindMatrices();
+    set_roll_pitch_yaw(roll, pitch, yaw);
+    //    model->fgSetDouble("/fdm/jsbsim/attitude/phi-deg", 0);
+    fgSetDouble("/fdm/jsbsim/attitude/phi-rad", roll);
+    //    model->fgSetDouble("/fdm/jsbsim/attitude/pitch-rad", pitch);
+    //    model->fgSetDouble("/fdm/jsbsim/attitude/psi-deg", 0);
+    fgSetDouble("/fdm/jsbsim/attitude/psi-rad", yaw);
+    //    model->fgSetDouble("/fdm/jsbsim/attitude/roll-rad", roll);
+    fgSetDouble("/fdm/jsbsim/attitude/theta-deg", pitch * RADIANS_TO_DEGREES);
+    set_vc_kts(VcKts);
+    fgSetDouble("/fdm/jsbsim/velocities/vt-ms", Vt_ms);
+    //printf("Body angles (%.3f, %.3f, %.3f)\n",
+    //model->fgGetDouble("/fdm/jsbsim/attitude/phi-deg"),
+    //model->fgGetDouble("/fdm/jsbsim/attitude/theta-deg"),
+    //    model->fgGetDouble("/fdm/jsbsim/attitude/psi-deg"));
+
+    //    model->fgSetDouble("/fdm/jsbsim/attitude/theta-rad", pitch);
+    //Auxiliary->Getbeta();
+    //Auxiliary->Getqbar();
+    //Auxiliary->GetVt();
+    //Auxiliary->GetTb2w();
+    //Auxiliary->GetTw2b();
+    //MassBalance->StructuralToBody(Aircraft->GetXYZrp());
+    double twovel = Vt_fps * 2;
+    double qbar_psf = 0.5 * (ro_kgm3 * KGM3_TO_SLUGS_FT3) * Vt_fps * Vt_fps;
+    double bi2vel = Wingspan / twovel;
+    double ci2vel = Wingchord / twovel;
+    set_qbar(qbar_psf);
+    set_bi2vel(bi2vel);
+    set_ci2vel(ci2vel);
+    
+    update();
+}
 void FGJSBsim::set_qbar(double v)
 {
     Auxiliary->qbar = v;
@@ -1701,6 +1845,10 @@ void FGJSBsim::set_bi2vel(double v)
 void FGJSBsim::set_ci2vel(double v)
 {
     Aerodynamics->ci2vel = v;
+}
+void FGJSBsim::set_vc_kts(double v)
+{
+    Auxiliary->vcas = v;
 }
 void FGJSBsim::UpdateWindMatrices()
 {

@@ -27,24 +27,10 @@ cockpit_param_api cockpit_param;
 PFN_ED_COCKPIT_SET_DRAW_ARGUMENT ed_cockpit_set_draw_argument;
 char i = 0;
 
-double Vt = 0;
-double Vt_ms = 0;
-double qbar_m = 0; // Dynamic pressure (Pa == N/m^2) (velocity pressure)
-double twovel_m;
-double bi2vel_m;
-double ci2vel_m;
 int local_debug = 1;
-int use_metric_forces = 1;
-int use_metric_moments = 1;
-
-double wind_x;
-double wind_y;
-double wind_z;
 double dT;
+double ro_kgm3 = 1.225;// 1013hPa
 
-double wing_area_m = 17.401;
-double wing_span_m = 6.68;
-double wing_chord_m = 2.605;
 
 int frame_count = 0;
 int nullf() { return 0; }
@@ -151,8 +137,8 @@ void DCS_interface::simulate(double dt)
     if (frame_count > 50)
     {
         local_debug = model->fgGetDouble("/fdm/jsbsim/acefm/debug");
-        use_metric_forces = model->fgGetDouble("/fdm/jsbsim/acefm/metric_forces");
-        use_metric_moments = model->fgGetDouble("/fdm/jsbsim/acefm/metric_moments");
+        //use_metric_forces = model->fgGetDouble("/fdm/jsbsim/acefm/metric_forces");
+        //use_metric_moments = model->fgGetDouble("/fdm/jsbsim/acefm/metric_moments");
         frame_count = 0;
     }
 
@@ -296,26 +282,13 @@ void ed_fm_add_local_force(double &x, double &y, double &z, double &pos_x, doubl
     y = -model->fgGetDouble("/fdm/jsbsim/forces/fbz-total-lbs") * LBS_TO_N;
     z = model->fgGetDouble("/fdm/jsbsim/forces/fby-total-lbs") * LBS_TO_N;
 
-    double xx = -model->fgGetDouble("/fdm/jsbsim/aero/coefficients/CDRAG") * qbar_m * wing_area_m;
-    double yy = model->fgGetDouble("/fdm/jsbsim/aero/coefficients/CLIFT") * qbar_m * wing_area_m;
-    double zz = model->fgGetDouble("/fdm/jsbsim/aero/coefficients/CSIDE") * qbar_m * wing_area_m;
-    if (local_debug)
-        printf("Forces (%8.1f, %8.1f, %8.1f) => (%8.1f, %8.1f, %8.1f)", x, y, z, xx, yy, zz);
-    if (use_metric_forces)
-    {
-        x = xx;
-        y = yy;
-        z = zz;
-    }
-        pos_x = center_of_mass.x;
+    pos_x = center_of_mass.x;
     pos_y = center_of_mass.y;
     pos_z = center_of_mass.z;
 }
 
 void ed_fm_add_local_moment(double &x, double &y, double &z)
 {
-//#define FT_LB2_TO_KGM2   4.88242764
-
     FGJSBsim *model = get_model();
 
     // jsb
@@ -328,38 +301,19 @@ void ed_fm_add_local_moment(double &x, double &y, double &z)
     // y + up
     // z + right
 
-    x = model->fgGetDouble("/fdm/jsbsim/moments/l-total-lbsft") / LBS_TO_N   ;
-    y = -model->fgGetDouble("/fdm/jsbsim/moments/n-total-lbsft")/ LBS_TO_N   ;
-    z = model->fgGetDouble("/fdm/jsbsim/moments/m-total-lbsft") / LBS_TO_N   ;
-
-    double roll  = model->fgGetDouble("/fdm/jsbsim/aero/coefficients/CROLL");
-    double yaw   = -model->fgGetDouble("/fdm/jsbsim/aero/coefficients/CYAW");
-    double pitch = model->fgGetDouble("/fdm/jsbsim/aero/coefficients/CPITCH");
-
-
-    double xx = roll  * qbar_m * wing_area_m * wing_span_m  / 9.8;
-    double yy = yaw   * qbar_m * wing_area_m * wing_span_m  / 9.8;
-    double zz = pitch * qbar_m * wing_area_m * wing_chord_m / 9.8;
-
-    if (local_debug)
-        printf("Moments (%7.1f, %7.1f, %7.1f) => (%7.1f, %7.1f, %7.1f) C(%7.4f, %7.4f, %7.4f) qb %7.1f\n", x, y, z, xx, yy, zz, roll, yaw, pitch, qbar_m);
-
-    if (use_metric_moments)
-    {
-        x = xx;
-        y = yy;
-        z = zz;
-    }
+    x = model->fgGetDouble("/fdm/jsbsim/moments/l-total-lbsft") / LBF_TO_NM ;
+    y = -model->fgGetDouble("/fdm/jsbsim/moments/n-total-lbsft") / LBF_TO_NM;
+    z = model->fgGetDouble("/fdm/jsbsim/moments/m-total-lbsft") / LBF_TO_NM;
 }
 
 void ed_fm_set_atmosphere(double h,	//altitude above sea level
     double t,	//Ambient temperature (kelvin)
     double a,	//speed of sound
-    double ro,	// (kg/m^3)
-    double p,	// atmosphere pressure (Pa == N/m^2)
-    double wind_vx,	//components of velocity vector, including turbulence in world coordinate system
-    double wind_vy,	//components of velocity vector, including turbulence in world coordinate system
-    double wind_vz	//components of velocity vector, including turbulence in world coordinate system
+    double _ro_kgm3,	// (kg/m^3)
+    double _nm2,	// atmosphere pressure (Pa == N/m^2)
+    double wind_vx_ms,	//components of velocity vector, including turbulence in world coordinate system
+    double wind_vy_ms,	//components of velocity vector, including turbulence in world coordinate system
+    double wind_vz_ms	//components of velocity vector, including turbulence in world coordinate system
 )
 {
     try
@@ -372,8 +326,8 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
         // 0.0023769 slug / (cu ft), 
         // 0.0765 lb / (cu ft)
         //printf("ed_fm_set_atmos %f, %f, %f, %f\n", h, t, a, ro);
-        model->set_atmosphere_rho_slugs_ft3(ro * KGM3_TO_SLUGS_FT3);
-        model->set_atmosphere_pressure_lbf_ft2(p * PA_TO_LBF_FT2);
+        model->set_atmosphere_rho_slugs_ft3(ro_kgm3 * KGM3_TO_SLUGS_FT3);
+        model->set_atmosphere_pressure_lbf_ft2(_nm2 * PA_TO_LBF_FT2);
 
         model->set_sound_speed(a * METERS_TO_FEET);
         model->set_altitude(h * METERS_TO_FEET);
@@ -389,26 +343,7 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
             last_h = h;
         }
         init = true;
-        //double densityD2 = 0.5*(ro * KGM3_TO_SLUGS_FT3);
-        double twovel = Vt * 2;
-        double   qbar = 0.5*(ro * KGM3_TO_SLUGS_FT3) * Vt*Vt;
-        double bi2vel = model->Wingspan / twovel;
-        double ci2vel = model->Wingchord / twovel;
-        model->set_qbar(qbar);
-        model->set_bi2vel(bi2vel);
-        model->set_ci2vel(ci2vel);
-
-        wind_x = wind_vx;
-        wind_y = wind_vy;
-        wind_z = wind_vz;
-
-
-        twovel_m = Vt_ms * 2;
-          qbar_m = 0.5*ro* Vt_ms*Vt_ms;
-        bi2vel_m = wing_span_m / twovel;
-        ci2vel_m = wing_chord_m / twovel;
-        model->set_bi2vel(bi2vel_m);
-        model->set_ci2vel(ci2vel_m);
+        ro_kgm3 = _ro_kgm3;
     }
     catch (std::string ex)
     {
@@ -423,18 +358,6 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
         MessageBoxA(0, "Unknown failure", "JSBSimEFM: Exception", 0);
         exit(0);
     }
-
-
-    //        double p = pressure->getDoubleValue();
-    //        double psl = fdmex->GetAtmosphere()->GetPressureSL();
-    //        double rhosl = fdmex->GetAtmosphere()->GetDensitySL();
-    //            double mach = FGJSBBase::MachFromVcalibrated(vc, p, psl, rhosl);
-    //        double temp = 1.8*(temperature->getDoubleValue() + 273.15);
-
-    //model->temperature->setDoubleValue(t);
-    //model->pressure->setDoubleValue(p);
-    //model->set_atmosphere_override_density(ro);
-    //model->altitude->setDoubleValue(h);
 }
 
 /*
@@ -483,7 +406,7 @@ void ed_fm_set_current_state(double ax,	//linear acceleration component in world
 {
     FGJSBsim *model = get_model();
     static JSBSim::FGQuaternion quat;
-
+    model->set_current_state(ax, ay, az, vx, vy, vz, px, py, pz, omegadotx, omegadoty, omegadotz, omegax, omegay, omegaz, quaternion_x, quaternion_y, quaternion_z, quaternion_w);
     //quat(1) = quaternion_w;
     //quat(2) = quaternion_x;
     //quat(3) = quaternion_y;
@@ -506,82 +429,27 @@ void ed_fm_set_current_state_body_axis(
     double omegadotx, double omegadoty, double omegadotz, // angular accelearation components in body coordinate system
     double omegax, double omegay, double omegaz,          // angular velocity components in body coordinate system
     double yaw, double pitch, double roll,                // radians
-    double common_angle_of_attack,                        // AoA radians
-    double common_angle_of_slide	//AoS radians
+    double alpha_rads,                        // AoA radians
+    double beta_rads	//AoS radians
 )
 {
     static int init = 0;
-    static double last_alpha;
-    static double last_beta;
-    double alpha = common_angle_of_attack;
-    double beta = common_angle_of_slide;
+    static double last_alpha_rads;
+    static double last_beta_rads;
+
     FGJSBsim *model = get_model();
-
-    model->set_aero_alpha_deg(alpha);
-    model->set_aero_beta_deg(beta);
-
-    if (init)
-    {
-        double factor = 1.0 / dT / RADIANS_TO_DEGREES;
-        model->set_aero_alphadot_rad_sec(((last_alpha - alpha)) * factor);
-        model->set_aero_betadot_rad_sec(((last_beta - beta)) * factor);
-    }
-    last_alpha = alpha;
-    last_beta = beta;
-    init = 1;
-
-    //model->set_aero_alphadot_rad_sec(omegadotz);
-    //model->set_aero_betadot_rad_sec(omegadoty);
-
-    model->set_velocities_p_aero_rad_sec(omegax);
-    model->set_velocities_q_aero_rad_sec(omegaz);
-    model->set_velocities_r_aero_rad_sec(-omegay);
-
-    model->set_velocities_u_aero_fps(vx * METER_TO_FEET_FACTOR);
-    model->set_velocities_v_aero_fps(vz * METER_TO_FEET_FACTOR);
-    model->set_velocities_w_aero_fps(-vy * METER_TO_FEET_FACTOR);
-
-    /*
-        attitude/phi-deg
-        attitude/phi-rad
-        attitude/pitch-rad
-        attitude/psi-deg
-        attitude/psi-rad
-        attitude/roll-rad
-        attitude/theta-deg
-        attitude/theta-rad
-        */
-    Vt = Magnitude((vx - wind_x)* METER_TO_FEET_FACTOR, (vy - wind_y)* METER_TO_FEET_FACTOR, (vz - wind_z)* METER_TO_FEET_FACTOR);
-
-    // include the effects of wind at this point on the velocities to get the overall forward velocity through the air mass.
-
-    Vt_ms = Magnitude(vx-wind_x, vy - wind_y, vz - wind_z);
-    model->set_velocities_vt_fps(Vt);
-
-    model->UpdateWindMatrices();
-    model->set_roll_pitch_yaw(roll, pitch, yaw);
-
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/phi-deg", 0);
-    model->fgSetDouble("/fdm/jsbsim/attitude/phi-rad", roll);
-//    model->fgSetDouble("/fdm/jsbsim/attitude/pitch-rad", pitch);
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/psi-deg", 0);
-    model->fgSetDouble("/fdm/jsbsim/attitude/psi-rad", yaw);
-//    model->fgSetDouble("/fdm/jsbsim/attitude/roll-rad", roll);
-    model->fgSetDouble("/fdm/jsbsim/attitude/theta-deg", pitch * RADIANS_TO_DEGREES);
-
-    //printf("Body angles (%.3f, %.3f, %.3f)\n",
-    //model->fgGetDouble("/fdm/jsbsim/attitude/phi-deg"),
-    //model->fgGetDouble("/fdm/jsbsim/attitude/theta-deg"),
-    //    model->fgGetDouble("/fdm/jsbsim/attitude/psi-deg"));
-
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/theta-rad", pitch);
-    //Auxiliary->Getbeta();
-    //Auxiliary->Getqbar();
-    //Auxiliary->GetVt();
-    //Auxiliary->GetTb2w();
-    //Auxiliary->GetTw2b();
-    //MassBalance->StructuralToBody(Aircraft->GetXYZrp());
-
+    model->set_current_state_body_axis(
+        ax, ay, az,                      // linear acceleration component in body coordinate system
+        vx, vy, vz,                      // linear velocity component in body coordinate system
+        wind_vx, wind_vy, wind_vz,       // wind linear velocity component in body coordinate system
+        omegadotx, omegadoty, omegadotz, // angular accelearation components in body coordinate system
+        omegax, omegay, omegaz,          // angular velocity components in body coordinate system
+        yaw, pitch, roll,                // radians
+        alpha_rads,                      // AoA radians
+        beta_rads,                        //AoS radians
+        dT,
+        ro_kgm3
+    );
 }
 
 /*
@@ -704,22 +572,18 @@ void ed_fm_set_command(int command, float value)
         // -1 full
         //value = (1.0 - value)/2;
         value = (-value + 1.0) / 2.0;
-        printf("Throttle %.2f\n", value);
         model->set_fcs_throttle_cmd_norm(0, value);
         //        model->get_controls()->set_throttle(1, value);
     }
     else if (command == 2001) { //iCommandPlanePitch
         double ep = -value;// 0.5 * (-value + 1.0);
-            //printf("Elevator %.2f\n", ep);
         model->set_fcs_elevator_cmd_norm(ep);
         //        model->get_controls()->set_elevator(0.5 * (-value + 1.0));
     }
     else if (command == 2002) { //iCommandPlaneRoll{
-        //printf("Aileron %.2f\n", value);
         model->set_fcs_aileron_cmd_norm(value);
     }
     else if (command == 2003) { //iCommandPlaneRoll{
-                                //printf("Rudder %.2f\n", value);
         model->set_fcs_rudder_cmd_norm(value);
     }
     //else if (command == 2035) {

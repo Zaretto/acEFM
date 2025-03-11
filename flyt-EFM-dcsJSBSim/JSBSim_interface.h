@@ -26,10 +26,11 @@ FORWARD DECLARATIONS
 #include "FGFDMExec.h"
 #define METER_TO_FEET_FACTOR 3.28084
 #define FEET_TO_METER_FACTOR   0.3048
+#define FEET2_TO_METER2_FACTOR 10.76391
 #define DEGREES_TO_RADIANS 0.0174532925
 #define RADIANS_TO_DEGREES 57.295779505
 #define JSB_NEARLY_ZERO 0.0000001 // avoid division by zero
-#define LBF_TO_NM 1.3558179483314
+#define LBF_TO_NM 14.5939
 #define LBS_TO_N 4.4483985765124555160142348754448
 #define KGM3_TO_SLUGS_FT3 0.0019403203
 #define INCHES_TO_METERS 0.0254
@@ -203,8 +204,10 @@ public:
     void set_velocities_w_aero_fps(double v);
     void set_velocities_v_aero_fps(double v);
     void set_velocities_vt_fps(double v);
+    void update();
     void set_velocities_u_aero_fps(double v);
     void set_velocities_r_aero_rad_sec(double v);
+    void set_vc_kts(double v);
     void set_velocities_q_aero_rad_sec(double v);
     void set_velocities_p_aero_rad_sec(double v);
     void set_velocities_mach(double v);
@@ -226,6 +229,38 @@ public:
     void set_aero_betadot_rad_sec(double v);
     void set_aero_alpha_deg(double v);
     void set_aero_alphadot_rad_sec(double v);
+    void set_current_state(double ax,           //linear acceleration component in world coordinate system
+                           double ay,           //linear acceleration component in world coordinate system
+                           double az,           //linear acceleration component in world coordinate system
+                           double vx,           //linear velocity component in world coordinate system
+                           double vy,           //linear velocity component in world coordinate system
+                           double vz,           //linear velocity component in world coordinate system
+                           double px,           //center of the body position in world coordinate system
+                           double py,           //center of the body position in world coordinate system
+                           double pz,           //center of the body position in world coordinate system
+                           double omegadotx,    //angular accelearation components in world coordinate system
+                           double omegadoty,    //angular accelearation components in world coordinate system
+                           double omegadotz,    //angular accelearation components in world coordinate system
+                           double omegax,       //angular velocity components in world coordinate system
+                           double omegay,       //angular velocity components in world coordinate system
+                           double omegaz,       //angular velocity components in world coordinate system
+                           double quaternion_x, //orientation quaternion components in world coordinate system
+                           double quaternion_y, //orientation quaternion components in world coordinate system
+                           double quaternion_z, //orientation quaternion components in world coordinate system
+                           double quaternion_w  //orientation quaternion components in world coordinate system
+    );
+    void set_current_state_body_axis(
+        double ax, double ay, double az,                      // linear acceleration component in body coordinate system
+        double vx, double vy, double vz,                      // linear velocity component in body coordinate system
+        double wind_vx, double wind_vy, double wind_vz,       // wind linear velocity component in body coordinate system
+        double omegadotx, double omegadoty, double omegadotz, // angular accelearation components in body coordinate system
+        double omegax, double omegay, double omegaz,          // angular velocity components in body coordinate system
+        double yaw, double pitch, double roll,                // radians
+        double alpha_rads,                                    // AoA radians
+        double beta_rads,                                     //AoS radians
+        double dT,
+        double ro_kgm3
+    );
     void set_qbar(double v);
     void set_bi2vel(double v);
     void set_ci2vel(double v);
@@ -260,7 +295,11 @@ public:
     bool needTrim;
     double Wingspan;
     double Wingchord;
-//private:
+    bool init_body = false;
+    double last_alpha_rads = 0;
+    double last_beta_rads = 0;
+
+    //private:
     JSBSim::FGFDMExec* fdmex;
     std::shared_ptr<JSBSim::FGInitialCondition> fgic;
     std::shared_ptr<JSBSim::FGAtmosphere> Atmosphere;
