@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
+using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -29,8 +30,15 @@ namespace Symon
             dataviewsource = new BindingSource();
             dataviewsource.DataSource = monitoredVariables;
             dataGridView1.DataSource = dataviewsource;
-            LoadProps();
-      
+        }
+        protected async override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            await PerformOperation("Loading properties", () =>
+            {
+                LoadProps();
+            });
+
         }
         void SaveProps()
         {
@@ -56,20 +64,23 @@ namespace Symon
             //dataGridView1.Rows[index].Cells["Property"].Value = treeView1.SelectedNode.Text;
             //dataGridView1.Rows[index].Cells["Value"].Value = jsbds.GetValue(treeView1.SelectedNode.Text);
             //this.dataGridView1.DataSource = null;
-
-            if (!string.IsNullOrEmpty(props))
+            delegateToMainThread(() =>
             {
-                Items = jsbds.LoadFrom(props.Split(','));
-                TreeNode parentNode;
-                foreach (var di in Items.OrderBy(xx => xx.GetName()))
+
+                if (!string.IsNullOrEmpty(props))
                 {
-                    parentNode = treeView1.Nodes.Add(di.GetName());
-                    if (selected .Contains(di.Name))
-                        monitoredVariables.Add(di);
-                    parentNode.Tag = di;
+                    Items = jsbds.LoadFrom(props.Split(','));
+                    TreeNode parentNode;
+                    foreach (var di in Items.OrderBy(xx => xx.GetName()))
+                    {
+                        parentNode = treeView1.Nodes.Add(di.GetName());
+                        if (selected.Contains(di.Name))
+                            monitoredVariables.Add(di);
+                        parentNode.Tag = di;
+                    }
+                    treeView1.ExpandAll();
                 }
-                treeView1.ExpandAll();
-            }
+            });
             //this.dataGridView1.DataSource = dataviewsource;
             //dataviewsource.ResetBindings(false);
             //dataviewsource.EndEdit();
@@ -80,20 +91,63 @@ namespace Symon
         {
             TreeNode parentNode;
             Items = jsbds.GetItems("/");
-            treeView1.Nodes.Clear();
-            foreach (var di in Items.OrderBy(xx=>xx.GetName()))
+            delegateToMainThread(() =>
             {
-                parentNode = treeView1.Nodes.Add(di.GetName());
-                parentNode.Tag = di;
-            }
-            treeView1.ExpandAll();
+                treeView1.Nodes.Clear();
+                foreach (var di in Items.OrderBy(xx => xx.GetName()))
+                {
+                    parentNode = treeView1.Nodes.Add(di.GetName());
+                    parentNode.Tag = di;
+                }
+                treeView1.ExpandAll();
+            });
         }
      
         
-        private void buttonLoad_Click(object sender, EventArgs e)
+        private async void buttonLoad_Click(object sender, EventArgs e)
         {
-            LoadProperties();
-            LoadProps();
+            await PerformOperation("Loading properties from simulation", () =>
+            {
+                LoadProperties();
+                LoadProps();
+            });
+        }
+        void delegateToMainThread(Action a)
+        {
+            this.BeginInvoke(new Action(() =>
+            {
+                // Perform your operations here
+
+                a();
+            }));
+        }
+        private void SetControlsEnabled(bool enabled)
+        {
+            foreach (Control control in this.Controls)
+            {
+                control.Enabled = enabled;
+            }
+        }
+
+        private async Task PerformOperation(string description, Action value)
+        {
+            try
+            {
+                // Disable controls
+                SetControlsEnabled(false);
+                groupBoxBusy.Visible = true;
+                bbLabel.Text = description;
+                await Task.Run(() =>
+                {
+                    value();
+                });
+            }
+            finally
+            {
+                // Enable controls
+                SetControlsEnabled(true);
+                groupBoxBusy.Visible = false;
+            }
         }
 
         private void buttonUpdate_Click(object sender, EventArgs e)
@@ -196,5 +250,6 @@ namespace Symon
         {
             SaveProps();
         }
+
     }
 }
