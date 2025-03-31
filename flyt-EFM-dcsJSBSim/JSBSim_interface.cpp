@@ -1788,6 +1788,14 @@ void FGJSBsim::set_current_state_body_axis(
     set_velocities_q_aero_rad_sec(omegaz);  // * DEGREES_TO_RADIANS);
     set_velocities_r_aero_rad_sec(-omegay); // * DEGREES_TO_RADIANS);
 
+    Propagate->SetPQR(1, omegax);
+    Propagate->SetPQR(2, omegaz);
+    Propagate->SetPQR(3, -omegay);
+
+    //_set_Omega_Body(Propagate->GetPQR(FGJSBBase::eP),
+    //    Propagate->GetPQR(FGJSBBase::eQ),
+    //    Propagate->GetPQR(FGJSBBase::eR));
+
     set_velocities_u_aero_fps(vx * METER_TO_FEET_FACTOR);
     set_velocities_v_aero_fps(vz * METER_TO_FEET_FACTOR);
     set_velocities_w_aero_fps(-vy * METER_TO_FEET_FACTOR);
