@@ -316,9 +316,11 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
     double wind_vz_ms	//components of velocity vector, including turbulence in world coordinate system
 )
 {
+#ifndef _DEBUG
     try
     {
-        FGJSBsim *model = get_model();
+#endif
+        FGJSBsim* model = get_model();
 
         // Sea level 15degres:
         // 1.225 kg / m3
@@ -344,6 +346,7 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
         }
         init = true;
         ro_kgm3 = _ro_kgm3;
+#if! _DEBUG
     }
     catch (std::string ex)
     {
@@ -358,6 +361,7 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
         MessageBoxA(0, "Unknown failure", "JSBSimEFM: Exception", 0);
         exit(0);
     }
+#endif
 }
 
 /*
