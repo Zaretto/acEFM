@@ -33,10 +33,12 @@
             this.panel1 = new System.Windows.Forms.Panel();
             this.splitContainer1 = new System.Windows.Forms.SplitContainer();
             this.groupBoxBusy = new System.Windows.Forms.GroupBox();
+            this.progressBar1 = new System.Windows.Forms.ProgressBar();
             this.bbLabel = new System.Windows.Forms.Label();
             this.treeView1 = new System.Windows.Forms.TreeView();
             this.dataGridView1 = new System.Windows.Forms.DataGridView();
             this.panel2 = new System.Windows.Forms.Panel();
+            this.addRowButton = new System.Windows.Forms.Button();
             this.buttonUpdate = new System.Windows.Forms.Button();
             this.buttonSave = new System.Windows.Forms.Button();
             this.buttonLoad = new System.Windows.Forms.Button();
@@ -44,7 +46,11 @@
             this.buttonReload = new System.Windows.Forms.Button();
             this.buttonClear = new System.Windows.Forms.Button();
             this.buttonMonitor = new System.Windows.Forms.Button();
-            this.progressBar1 = new System.Windows.Forms.ProgressBar();
+            this.statusStrip1 = new System.Windows.Forms.StatusStrip();
+            this.toolStripStatusLabel1 = new System.Windows.Forms.ToolStripStatusLabel();
+            this.cbSaveIndex = new System.Windows.Forms.ComboBox();
+            this.btnLoadSelected = new System.Windows.Forms.Button();
+            this.btnSaveSelected = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
             this.splitContainer1.Panel1.SuspendLayout();
@@ -53,6 +59,7 @@
             this.groupBoxBusy.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).BeginInit();
             this.panel2.SuspendLayout();
+            this.statusStrip1.SuspendLayout();
             this.SuspendLayout();
             // 
             // timerMonitor
@@ -103,6 +110,14 @@
             this.groupBoxBusy.TabStop = false;
             this.groupBoxBusy.Text = "Application is busy";
             // 
+            // progressBar1
+            // 
+            this.progressBar1.Location = new System.Drawing.Point(85, 109);
+            this.progressBar1.Name = "progressBar1";
+            this.progressBar1.Size = new System.Drawing.Size(239, 22);
+            this.progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
+            this.progressBar1.TabIndex = 1;
+            // 
             // bbLabel
             // 
             this.bbLabel.AutoSize = true;
@@ -140,6 +155,10 @@
             // panel2
             // 
             this.panel2.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.panel2.Controls.Add(this.btnSaveSelected);
+            this.panel2.Controls.Add(this.btnLoadSelected);
+            this.panel2.Controls.Add(this.cbSaveIndex);
+            this.panel2.Controls.Add(this.addRowButton);
             this.panel2.Controls.Add(this.buttonUpdate);
             this.panel2.Controls.Add(this.buttonSave);
             this.panel2.Controls.Add(this.buttonLoad);
@@ -151,6 +170,16 @@
             this.panel2.Name = "panel2";
             this.panel2.Size = new System.Drawing.Size(1049, 31);
             this.panel2.TabIndex = 17;
+            // 
+            // addRowButton
+            // 
+            this.addRowButton.Location = new System.Drawing.Point(577, 3);
+            this.addRowButton.Name = "addRowButton";
+            this.addRowButton.Size = new System.Drawing.Size(35, 26);
+            this.addRowButton.TabIndex = 36;
+            this.addRowButton.Text = "+";
+            this.addRowButton.UseVisualStyleBackColor = true;
+            this.addRowButton.Click += new System.EventHandler(this.addRowButton_Click);
             // 
             // buttonUpdate
             // 
@@ -164,11 +193,11 @@
             // 
             // buttonSave
             // 
-            this.buttonSave.Location = new System.Drawing.Point(619, 3);
+            this.buttonSave.Location = new System.Drawing.Point(473, 3);
             this.buttonSave.Name = "buttonSave";
-            this.buttonSave.Size = new System.Drawing.Size(51, 26);
+            this.buttonSave.Size = new System.Drawing.Size(67, 26);
             this.buttonSave.TabIndex = 35;
-            this.buttonSave.Text = "save";
+            this.buttonSave.Text = "save def";
             this.buttonSave.UseVisualStyleBackColor = true;
             this.buttonSave.Click += new System.EventHandler(this.buttonSave_Click);
             // 
@@ -184,7 +213,7 @@
             // 
             // buttonDisconnect
             // 
-            this.buttonDisconnect.Location = new System.Drawing.Point(542, 3);
+            this.buttonDisconnect.Location = new System.Drawing.Point(396, 3);
             this.buttonDisconnect.Name = "buttonDisconnect";
             this.buttonDisconnect.Size = new System.Drawing.Size(71, 26);
             this.buttonDisconnect.TabIndex = 34;
@@ -194,7 +223,7 @@
             // 
             // buttonReload
             // 
-            this.buttonReload.Location = new System.Drawing.Point(485, 3);
+            this.buttonReload.Location = new System.Drawing.Point(339, 3);
             this.buttonReload.Name = "buttonReload";
             this.buttonReload.Size = new System.Drawing.Size(51, 26);
             this.buttonReload.TabIndex = 30;
@@ -204,7 +233,7 @@
             // 
             // buttonClear
             // 
-            this.buttonClear.Location = new System.Drawing.Point(374, 3);
+            this.buttonClear.Location = new System.Drawing.Point(241, 3);
             this.buttonClear.Name = "buttonClear";
             this.buttonClear.Size = new System.Drawing.Size(51, 26);
             this.buttonClear.TabIndex = 33;
@@ -222,19 +251,75 @@
             this.buttonMonitor.UseVisualStyleBackColor = true;
             this.buttonMonitor.Click += new System.EventHandler(this.buttonMonitor_Click);
             // 
-            // progressBar1
+            // statusStrip1
             // 
-            this.progressBar1.Location = new System.Drawing.Point(85, 109);
-            this.progressBar1.Name = "progressBar1";
-            this.progressBar1.Size = new System.Drawing.Size(239, 22);
-            this.progressBar1.Style = System.Windows.Forms.ProgressBarStyle.Continuous;
-            this.progressBar1.TabIndex = 1;
+            this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.toolStripStatusLabel1});
+            this.statusStrip1.Location = new System.Drawing.Point(0, 897);
+            this.statusStrip1.Name = "statusStrip1";
+            this.statusStrip1.Size = new System.Drawing.Size(1101, 22);
+            this.statusStrip1.TabIndex = 9;
+            this.statusStrip1.Text = "statusStrip1";
+            // 
+            // toolStripStatusLabel1
+            // 
+            this.toolStripStatusLabel1.Name = "toolStripStatusLabel1";
+            this.toolStripStatusLabel1.Size = new System.Drawing.Size(118, 17);
+            this.toolStripStatusLabel1.Text = "toolStripStatusLabel1";
+            this.toolStripStatusLabel1.Click += new System.EventHandler(this.toolStripStatusLabel1_Click);
+            // 
+            // cbSaveIndex
+            // 
+            this.cbSaveIndex.FormattingEnabled = true;
+            this.cbSaveIndex.Items.AddRange(new object[] {
+            "<default>",
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",
+            "16"});
+            this.cbSaveIndex.Location = new System.Drawing.Point(628, 6);
+            this.cbSaveIndex.Name = "cbSaveIndex";
+            this.cbSaveIndex.Size = new System.Drawing.Size(93, 21);
+            this.cbSaveIndex.TabIndex = 37;
+            // 
+            // btnLoadSelected
+            // 
+            this.btnLoadSelected.Location = new System.Drawing.Point(727, 5);
+            this.btnLoadSelected.Name = "btnLoadSelected";
+            this.btnLoadSelected.Size = new System.Drawing.Size(73, 26);
+            this.btnLoadSelected.TabIndex = 38;
+            this.btnLoadSelected.Text = "load sel";
+            this.btnLoadSelected.UseVisualStyleBackColor = true;
+            this.btnLoadSelected.Click += new System.EventHandler(this.btnLoadSelected_Click);
+            // 
+            // btnSaveSelected
+            // 
+            this.btnSaveSelected.Location = new System.Drawing.Point(806, 6);
+            this.btnSaveSelected.Name = "btnSaveSelected";
+            this.btnSaveSelected.Size = new System.Drawing.Size(75, 26);
+            this.btnSaveSelected.TabIndex = 39;
+            this.btnSaveSelected.Text = "save sel";
+            this.btnSaveSelected.UseVisualStyleBackColor = true;
+            this.btnSaveSelected.Click += new System.EventHandler(this.btnSaveSelected_Click);
             // 
             // SymonMain
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1101, 919);
+            this.Controls.Add(this.statusStrip1);
             this.Controls.Add(this.panel1);
             this.Name = "SymonMain";
             this.Text = "DCS JSBSim Symon";
@@ -248,7 +333,10 @@
             this.groupBoxBusy.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).EndInit();
             this.panel2.ResumeLayout(false);
+            this.statusStrip1.ResumeLayout(false);
+            this.statusStrip1.PerformLayout();
             this.ResumeLayout(false);
+            this.PerformLayout();
 
         }
 
@@ -269,6 +357,12 @@
         private System.Windows.Forms.GroupBox groupBoxBusy;
         private System.Windows.Forms.Label bbLabel;
         private System.Windows.Forms.ProgressBar progressBar1;
+        private System.Windows.Forms.StatusStrip statusStrip1;
+        private System.Windows.Forms.ToolStripStatusLabel toolStripStatusLabel1;
+        private System.Windows.Forms.Button addRowButton;
+        private System.Windows.Forms.ComboBox cbSaveIndex;
+        private System.Windows.Forms.Button btnSaveSelected;
+        private System.Windows.Forms.Button btnLoadSelected;
     }
 }
 

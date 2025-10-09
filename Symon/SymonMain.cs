@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
+using System.Net.Sockets;
 using System.Reflection.Emit;
 using System.Text;
 using System.Threading.Tasks;
@@ -40,6 +41,32 @@ namespace Symon
             });
 
         }
+        void SaveSelected(string idx)
+        {
+            if (idx == "<default>") idx = "";
+            if (monitoredVariables.Count > 0)
+            {
+                var vals = String.Join(",", monitoredVariables.OfType<DataItem>().Select(xx => xx.Name));
+                Registry.SetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected" + idx, vals);
+            }
+
+        }
+        void LoadSelected(string idx)
+        {
+            if (idx == "<default>") idx = "";
+            var selected_l = (string)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected"+idx, "");
+
+            string[] selected = null;
+            if (!string.IsNullOrEmpty(selected_l))
+                selected = selected_l.Split(',');
+            monitoredVariables.Clear();
+            foreach (var s in selected.Distinct())
+            {
+                monitoredVariables.Add(new DataItem(jsbds, s));
+            }
+
+        }
+
         void SaveProps()
         {
             if (Items.Any())
@@ -47,39 +74,39 @@ namespace Symon
                 string vals = String.Join(",", Items.Select(xx => xx.Name));
                 Registry.SetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Properties", vals);
             }
-            if (monitoredVariables.Count > 0)
-            {
-                var vals = String.Join(",", monitoredVariables.OfType<DataItem>().Select(xx => xx.Name));
-                Registry.SetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected", vals);
-            }
+            SaveSelected("");
         }
         void LoadProps()
         {
             var props = (string)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Properties", "");
-            var selected_l = (string)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected", "");
-            string[] selected = null;
-            if (!string.IsNullOrEmpty(selected_l))
-                selected = selected_l.Split(',');
+
             //var index = dataGridView1.Rows.Add();
             //dataGridView1.Rows[index].Cells["Property"].Value = treeView1.SelectedNode.Text;
             //dataGridView1.Rows[index].Cells["Value"].Value = jsbds.GetValue(treeView1.SelectedNode.Text);
             //this.dataGridView1.DataSource = null;
             delegateToMainThread(() =>
             {
-
-                if (!string.IsNullOrEmpty(props))
+                try
                 {
-                    Items = jsbds.LoadFrom(props.Split(','));
-                    TreeNode parentNode;
-                    foreach (var di in Items.OrderBy(xx => xx.GetName()))
+                    if (!string.IsNullOrEmpty(props))
                     {
-                        parentNode = treeView1.Nodes.Add(di.GetName());
-                        if (selected.Contains(di.Name))
-                            monitoredVariables.Add(di);
-                        parentNode.Tag = di;
+                        Items = jsbds.LoadFrom(props.Split(','));
+                        TreeNode parentNode;
+                        foreach (var di in Items.OrderBy(xx => xx.GetName()))
+                        {
+                            parentNode = treeView1.Nodes.Add(di.GetName());
+                            parentNode.Tag = di;
+                        }
+                        treeView1.ExpandAll();
                     }
-                    treeView1.ExpandAll();
+                    LoadSelected("");
+                    ClearError();
                 }
+                catch (SocketException ex)
+                {
+                    ShowError("Socket exception ", ex.Message);
+                }
+
             });
             //this.dataGridView1.DataSource = dataviewsource;
             //dataviewsource.ResetBindings(false);
@@ -89,18 +116,35 @@ namespace Symon
         }
         private void LoadProperties()
         {
-            TreeNode parentNode;
-            Items = jsbds.GetItems("/");
-            delegateToMainThread(() =>
+            try
             {
-                treeView1.Nodes.Clear();
-                foreach (var di in Items.OrderBy(xx => xx.GetName()))
+                TreeNode parentNode;
+                Items = jsbds.GetItems("/");
+                delegateToMainThread(() =>
                 {
-                    parentNode = treeView1.Nodes.Add(di.GetName());
-                    parentNode.Tag = di;
-                }
-                treeView1.ExpandAll();
-            });
+                    treeView1.Nodes.Clear();
+                    foreach (var di in Items.OrderBy(xx => xx.GetName()))
+                    {
+                        parentNode = treeView1.Nodes.Add(di.GetName());
+                        parentNode.Tag = di;
+                    }
+                    treeView1.ExpandAll();
+                });
+                ClearError();
+
+            }
+            catch (SocketException ex)
+            {
+                if (ex.Message.Contains("failed to respond"))
+                    ShowError("Error getting data", "Timeout");
+                else
+                    ShowError("Socket exception ", ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                ShowError("LoadProperties From JsbSim: ERROR ", ex.Message);
+            }
+
         }
      
         
@@ -157,15 +201,27 @@ namespace Symon
 
         private void UpdateValues()
         {
-            jsbds.BeginBatch();
-            foreach (var di in monitoredVariables.OfType<DataItem>())
-                di.RequestUpdate();
-            jsbds.EndBatch();
-            foreach (var di in monitoredVariables.OfType<DataItem>())
-                di.Update();
-            //foreach (var di in monitoredVariables.OfType<DataItem>())
-            //    di.GetValue();
-            dataviewsource.ResetBindings(false);
+            try
+            {
+                jsbds.BeginBatch();
+                foreach (var di in monitoredVariables.OfType<DataItem>())
+                    di.RequestUpdate();
+                jsbds.EndBatch();
+                foreach (var di in monitoredVariables.OfType<DataItem>())
+                    di.Update();
+                //foreach (var di in monitoredVariables.OfType<DataItem>())
+                //    di.GetValue();
+//                dataviewsource.ResetBindings(false);
+                ClearError();
+
+            }
+            catch (SocketException ex)
+            {
+                ShowError("Socket exception ", ex.Message);
+                timerMonitor.Stop();
+
+                buttonDisconnect_Click(null, null);
+            }
         }
         SortableBindingList<DataItem> monitoredVariables = new SortableBindingList<DataItem>();
 //            BindingList<DataItem> monitoredVariables = new BindingList<DataItem>();
@@ -190,18 +246,29 @@ namespace Symon
 
         private void buttonMonitor_Click(object sender, EventArgs e)
         {
-            if (Monitoring)
+            try
             {
-                Monitoring = false;
-                buttonMonitor.Text = "Monitoring";
-                timerMonitor.Stop();
+                if (Monitoring)
+                {
+                    Monitoring = false;
+                    buttonMonitor.Text = "Monitoring";
+                    timerMonitor.Stop();
+                }
+                else
+                {
+                    if (!jsbds.IsConnected)
+                    {
+                        buttonDisconnect_Click(sender, e);
+                    }
+                    Monitoring = true;
+                    buttonMonitor.Text = "Stop Monitoring";
+                    timerMonitor.Interval = 500;
+                    timerMonitor.Start();
+                }
             }
-            else
+            catch (SocketException )
             {
-                Monitoring = true;
-                buttonMonitor.Text = "Stop Monitoring";
-                timerMonitor.Interval = 500;
-                timerMonitor.Start();
+
             }
         }
 
@@ -224,26 +291,37 @@ namespace Symon
 
         private void buttonDisconnect_Click(object sender, EventArgs e)
         {
-            if (jsbds.IsConnected)
+            try
             {
-                if (Monitoring)
+                if (jsbds.IsConnected)
                 {
-                    buttonMonitor_Click(sender, e);
+                    if (Monitoring)
+                    {
+                        buttonMonitor_Click(sender, e);
+                    }
+                    jsbds.CloseConnection();
+                    buttonDisconnect.Text = "connect";
                 }
-                jsbds.CloseConnection();
-                buttonDisconnect.Text = "connect";
+                else
+                {
+                    jsbds.OpenConnection();
+                    buttonDisconnect.Text = "disconnect";
+                }
+                ClearError();
+
             }
-            else
+            catch (SocketException ex)
             {
-                jsbds.OpenConnection();
-                buttonDisconnect.Text = "disconnect";
+                ShowError("Socket exception ", ex.Message);
             }
         }
-
-        private void buttonReload_Click(object sender, EventArgs e)
+        private async void buttonReload_Click(object sender, EventArgs e)
         {
-//            monitoredVariables.Clear();
-            LoadProperties();
+            //            monitoredVariables.Clear();
+            await PerformOperation("Reloading properties", () =>
+            {
+                LoadProperties();
+            });
         }
 
         private void buttonSave_Click(object sender, EventArgs e)
@@ -251,5 +329,46 @@ namespace Symon
             SaveProps();
         }
 
+        private void toolStripStatusLabel1_Click(object sender, EventArgs e)
+        {
+
+        }
+        void ShowError(string title, string message)
+        {
+            toolStripStatusLabel1.Text = 
+                DateTime.Now.ToString("HH:mm:ss.ff") 
+                + title 
+                + message;
+        }
+        void ClearError()
+        {
+            //if (toolStripStatusLabel1.Text != "")
+            //    toolStripStatusLabel1.Text = "";
+        }
+
+        private void addRowButton_Click(object sender, EventArgs e)
+        {
+            var ni = new DataItem(jsbds, "");
+            monitoredVariables.Add(ni);
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+          
+
+
+        }
+
+        private void btnLoadSelected_Click(object sender, EventArgs e)
+        {
+            LoadSelected(cbSaveIndex.Text);
+
+        }
+
+        private void btnSaveSelected_Click(object sender, EventArgs e)
+        {
+            SaveSelected(cbSaveIndex.Text);
+
+        }
     }
 }

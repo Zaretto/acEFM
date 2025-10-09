@@ -1,135 +1,198 @@
-﻿using System;
+﻿using Symon.DataSource;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 
-namespace Symon.DataSource
+public class DataItem : INotifyPropertyChanged
 {
-    public class DataItem
+    private DataSource ds;
+    private string name;
+    private string value = "";
+    private bool container;
+    //private bool plot;
+    List<DataItem> Children = null;
+    DataItem Parent = null;
+
+    public string Name
     {
-        private DataSource ds;
-        public string name;
-        private string value = "";
-        private bool container;
-        private bool plot;
-
-        List<DataItem> Children = null;
-        DataItem Parent = null;
-
-        public string Name { get => name; set => name = value; }
-        public string Value
+        get => name;
+        set
         {
-            get
+            if (name != value)
             {
-                return value;
+                // Unsubscribe from old name if it was subscribed
+                if (ds is DataSourceJSBSim jsbsim && !string.IsNullOrEmpty(name))
+                {
+                    jsbsim.OnValueChanged -= OnDataSourceValueChanged;
+                }
+
+                name = value;
+
+                // Subscribe to new name
+                if (ds is DataSourceJSBSim jsbsimNew && !string.IsNullOrEmpty(name))
+                {
+                    jsbsimNew.OnValueChanged += OnDataSourceValueChanged;
+                }
+
+                OnPropertyChanged();
             }
-            set
-            {
-                this.value = value; ds.SetValue(name, value);
-            }
         }
+    }
 
-        //public bool Plot { get => plot; set => this.plot = value; }
-        public DataItem(DataSource ds, String name)
-        {
-            this.ds = ds;
-            this.name = name;
-            container = true;
-        }
-
-        public bool IsContainer()
-        {
-            return container;
-        }
-
-        public DataItem(DataSource ds, String name, String val)
-        {
-            this.ds = ds;
-            this.name = name;
-            this.value = val;
-            this.container = false;
-        }
-
-        public void SetName(String name)
-        {
-            this.name = name;
-        }
-
-        public void SetValue(string value)
-        {
-            this.value = value;
-        }
-
-        public List<DataItem> GetChildren()
-        {
-            return Children;
-        }
-
-        public void AddChildren(List<DataItem> v)
-        {
-            Children = v;
-            for (int i = 0; i < v.Count(); i++)
-                v.ElementAt(i).Parent = this;
-        }
-
-        public String GetPath()
-        {
-            String path = "";
-            DataItem p = Parent;
-
-            while (p != null)
-            {
-                path = p.GetName() + path;
-                p = p.Parent;
-            }
-
-            return path;
-        }
-        public String GetName()
-        {
-            return name;
-        }
-
-        public string GetValue()
+    public string Value
+    {
+        get
         {
             return value;
         }
-
-        public bool HasChildren()
+        set
         {
-            return IsContainer();
-        }
-        public void Update()
-        {
-            string tv = ds.CurrentValue(Name);
-            if (tv != value) value = tv;
-        }
-        internal void RequestUpdate()
-        {
-            ds.UpdateValue(Name);
+            if (this.value != value)
+            {
+                this.value = value;
+                ds.SetValue(name, value);
+                OnPropertyChanged();
+            }
         }
     }
-}
 
-            //// 
-            //// chart1
-            //// 
-            //this.chart1 = new System.Windows.Forms.DataVisualization.Charting.Chart();
-            //chartArea1.Name = "ChartArea1";
-            //this.chart1.ChartAreas.Add(chartArea1);
-            //this.chart1.Location = new System.Drawing.Point(685, 21);
-            //this.chart1.Name = "chart1";
-            //series1.ChartArea = "ChartArea1";
-            //series1.ChartType = System.Windows.Forms.DataVisualization.Charting.SeriesChartType.FastLine;
-            //series1.Name = "Series1";
-            //this.chart1.Series.Add(series1);
-            //this.chart1.Size = new System.Drawing.Size(404, 94);
-            //this.chart1.TabIndex = 8;
-            //this.chart1.Text = "chart1";
-            //title1.Name = "Title1";
-            //title1.Text = "alpha";
-            //this.chart1.Titles.Add(title1);
-            //((System.ComponentModel.ISupportInitialize)(this.chart1)).BeginInit();
-            //this.Controls.Add(this.chart1);
-            //((System.ComponentModel.ISupportInitialize)(this.chart1)).EndInit();
+    //public bool Plot
+    //{
+    //    get => plot;
+    //    set
+    //    {
+    //        if (this.plot != value)
+    //        {
+    //            this.plot = value;
+    //            OnPropertyChanged();
+    //        }
+    //    }
+    //}
+
+    // PropertyChanged event and helper method
+    public event PropertyChangedEventHandler PropertyChanged;
+
+    protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    // Event handler for DataSource value changes
+    private void OnDataSourceValueChanged(string itemName, string newValue)
+    {
+        if (itemName == this.name && this.value != newValue)
+        {
+            // Update the value without triggering SetValue on the datasource
+            this.value = newValue;
+            OnPropertyChanged(nameof(Value));
+        }
+    }
+
+    public DataItem(DataSource ds, String name)
+    {
+        this.ds = ds;
+        this.name = name;
+        container = true;
+
+        // Subscribe to value changes if this is a JSBSim datasource
+        if (ds is DataSourceJSBSim jsbsim)
+        {
+            jsbsim.OnValueChanged += OnDataSourceValueChanged;
+        }
+    }
+
+    public DataItem(DataSource ds, String name, String val)
+    {
+        this.ds = ds;
+        this.name = name;
+        this.value = val;
+        this.container = false;
+
+        // Subscribe to value changes if this is a JSBSim datasource
+        if (ds is DataSourceJSBSim jsbsim)
+        {
+            jsbsim.OnValueChanged += OnDataSourceValueChanged;
+        }
+    }
+
+    // Dispose pattern to unsubscribe from events
+    public void Dispose()
+    {
+        if (ds is DataSourceJSBSim jsbsim)
+        {
+            jsbsim.OnValueChanged -= OnDataSourceValueChanged;
+        }
+    }
+
+    public bool IsContainer()
+    {
+        return container;
+    }
+
+    public void SetName(String name)
+    {
+        this.Name = name;
+    }
+
+    public void SetValue(string value)
+    {
+        this.Value = value;
+    }
+
+    public List<DataItem> GetChildren()
+    {
+        return Children;
+    }
+
+    public void AddChildren(List<DataItem> v)
+    {
+        Children = v;
+        for (int i = 0; i < v.Count(); i++)
+            v.ElementAt(i).Parent = this;
+    }
+
+    public String GetPath()
+    {
+        String path = "";
+        DataItem p = Parent;
+        while (p != null)
+        {
+            path = p.GetName() + path;
+            p = p.Parent;
+        }
+        return path;
+    }
+
+    public String GetName()
+    {
+        return name;
+    }
+
+    public string GetValue()
+    {
+        return value;
+    }
+
+    public bool HasChildren()
+    {
+        return IsContainer();
+    }
+
+    public void Update()
+    {
+        string tv = ds.CurrentValue(Name);
+        if (tv != value)
+        {
+            // Update value directly without triggering SetValue
+            this.value = tv;
+            OnPropertyChanged(nameof(Value));
+        }
+    }
+
+    internal void RequestUpdate()
+    {
+        ds.UpdateValue(Name);
+    }
+}

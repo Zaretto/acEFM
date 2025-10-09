@@ -11,7 +11,7 @@ namespace Symon.DataSource
         private List<string> BatchUpdate;
         private bool BuildingBatch;
 
-        public DataSourceJSBSim(string host, int port) : base(host,port)
+        public DataSourceJSBSim(string host, int port) : base(host, port)
         {
         }
 
@@ -34,13 +34,11 @@ namespace Symon.DataSource
             if (sender == null)
             {
                 res = "fdm/jsbsim/value 0\n";
+                throw new InvalidOperationException("GetItems: Not connected");
             }
             else
             {
-                Command("HOLD", 1000);
-                res = Command("get " + Root, 10000);
-
-                Command("RESUME", 1000);
+               res=Command("GET " + Root, 11000);
             }
             res = res.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n\n", "\n");
             var lines = res.Split('\n');
@@ -96,7 +94,7 @@ namespace Symon.DataSource
         {
             var dv = new List<DataItem>();
             System.Console.WriteLine("--> " + lines.Length + " lines");
-            foreach(var prop in lines)
+            foreach (var prop in lines)
             {
                 dv.Add(new DataItem(this, prop, ""));
             }
@@ -111,7 +109,7 @@ namespace Symon.DataSource
         public override String CurrentValue(String item)
         {
             if (_CurrentValues.ContainsKey(item))
-            return _CurrentValues[item];
+                return _CurrentValues[item];
             return "**";
         }
         Dictionary<string, string> _CurrentValues = new Dictionary<string, string>();
@@ -122,6 +120,7 @@ namespace Symon.DataSource
             BuildingBatch = true;
             return BuildingBatch;
         }
+
         public override bool EndBatch()
         {
             String update = "";
@@ -129,7 +128,7 @@ namespace Symon.DataSource
             {
                 update = update + "get " + item + "\r\n";
             }
-            string res = Command(update,25);
+            string res = Command(update, 25);
             BuildingBatch = false;
             BatchUpdate.Clear();
             var lines = res.Split('\n');
@@ -155,22 +154,50 @@ namespace Symon.DataSource
                     var vals = v.Split('=');
                     if (vals.Length == 2)
                     {
-                        _CurrentValues[vals[0].Trim()] = vals[1];
+                        string itemName = vals[0].Trim();
+                        string newValue = vals[1];
+
+                        // Update the internal dictionary
+                        _CurrentValues[itemName] = newValue;
+
+                        // IMPORTANT: Notify any DataItems that may be watching this value
+                        // You'll need to maintain a reference to DataItems or use an event system
+                        NotifyValueChanged(itemName, newValue);
                     }
                 }
             }
             return BuildingBatch;
         }
 
+        // New method to notify DataItems of value changes
+        private void NotifyValueChanged(string itemName, string newValue)
+        {
+            // Option 1: If you maintain a list of DataItems, update them directly
+            // This requires tracking created DataItems
+
+            // Option 2: Use an event system (recommended)
+            OnValueChanged?.Invoke(itemName, newValue);
+        }
+
+        // Event that DataItems can subscribe to for value updates
+        public event Action<string, string> OnValueChanged;
+
         public override void SetValue(String item, string value)
         {
             String res;
             res = Command("set " + item + " " + value + "\n", 25);
+
+            // Update local cache and notify
+            _CurrentValues[item] = value;
+            NotifyValueChanged(item, value);
         }
 
         public override String GetValue(String item)
         {
             String res;
+            if (string.IsNullOrEmpty(item))
+                return "";
+
             res = Command("get " + item + "\n", 25);
 
             var lines = res.Split('\n');
@@ -195,7 +222,14 @@ namespace Symon.DataSource
                     var v = lines[i].Split('=');
                     if (v.Length == 2)
                     {
-                        _CurrentValues[v[0].Trim()] = v[1];
+                        string itemName = v[0].Trim();
+                        string newValue = v[1];
+
+                        _CurrentValues[itemName] = newValue;
+
+                        // Notify of value change
+                        NotifyValueChanged(itemName, newValue);
+
                         return _CurrentValues[item];
                     }
                 }
@@ -208,7 +242,7 @@ namespace Symon.DataSource
             if (sender == null)
                 return;
             System.Console.WriteLine("HOLD");
-            System.Console.WriteLine(Command("hold",100));
+            System.Console.WriteLine(Command("hold", 100));
         }
 
         public override void OpenConnection()
@@ -221,7 +255,7 @@ namespace Symon.DataSource
                 return;
 
             System.Console.WriteLine("RESUME");
-            System.Console.WriteLine(Command("resume",100));
+            System.Console.WriteLine(Command("resume", 100));
         }
-    }
+   }
 }

@@ -77,7 +77,7 @@ namespace Symon.DataSource
                 {
                     di.SetValue(new_value);
                 }
-                catch (FormatException e)
+                catch (FormatException)
                 {
                 }
             }
@@ -108,6 +108,7 @@ namespace Symon.DataSource
                 catch (SocketException se)
                 {
                     Console.WriteLine("SocketException : {0}", se.ToString());
+                    throw;
                 }
                 catch (Exception e)
                 {
@@ -126,6 +127,7 @@ namespace Symon.DataSource
             {
 
                 byte[] bytes = new byte[32768];
+                
                 bytesRec = sender.Receive(bytes);
                 ret += Encoding.ASCII.GetString(bytes, 0, bytesRec);
                 Console.WriteLine("Echoed test = {0}", ret);
@@ -150,6 +152,8 @@ namespace Symon.DataSource
             try
             {
                 sender.Connect(remoteEP);
+                sender.ReceiveTimeout = 5000; // 2 minutes in milliseconds
+                sender.SendTimeout = 3000;
 
                 Console.WriteLine("Socket connected to {0}", sender.RemoteEndPoint.ToString());
             }
