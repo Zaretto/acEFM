@@ -26,7 +26,12 @@
 #include "../JSBSim/src/input_output/FGXMLParse.h"
 #include <input_output\FGPropertyManager.h>
 
-const int DEFAULT_MODE = 0;// (SGPropertyNode::READ | SGPropertyNode::WRITE);
+using std::count;
+using std::endl;
+using std::string;
+using std::cout;
+
+    const int DEFAULT_MODE = 0;// (SGPropertyNode::READ | SGPropertyNode::WRITE);
 const std::string ATTR = "_attr_";
 class PropsVisitor : public JSBSim::FGXMLParse
 {
@@ -54,7 +59,7 @@ public:
 
         if (_level == 0) {
             if (strcmp(name, "PropertyList")) {
-                string message = "Root element name is ";
+                std::string message = "Root element name is ";
                 message += name;
                 message += "; expected PropertyList";
                 throw sg_io_exception(message, location);
@@ -93,7 +98,7 @@ public:
             // Get the index.
             attval = atts.getValue("n");
             int index = 0;
-            string strName(name);
+            std::string strName(name);
             if (attval != 0) {
                 index = atoi(attval);
                 st.counters[strName] = std::max(st.counters[strName], index + 1);
@@ -450,10 +455,10 @@ private:
                 || (n_children == 1 && node->getChild(0)->getNameString() != ATTR);
         }
         SGPropertyNode* node;
-        string type;
+        std::string type;
         int mode;
         bool omit;
-        map<string, int> counters;
+        std::map<std::string, int> counters;
     };
 
     State& state() { return _state_stack[_state_stack.size() - 1]; }

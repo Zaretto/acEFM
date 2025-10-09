@@ -100,11 +100,11 @@ HRESULT CDirectInputJoystick::ProcessJoy()
     if( FAILED(m_pDIJoy->GetDeviceState( sizeof(DIJOYSTATE2), &m_js ) ) )
         return E_FAIL;
     DIJOYSTATE2 *st = &m_js;
-    wprintf(L"Ax: (%4d,%4d,%4d) RAx: (%4d,%4d,%4d) Slider: (%4d,%4d)  nPov: (%4d,%4d,%4d,%4d)\n",
-        st->lX, st->lY, st->lZ, st->lRx, st->lRy, st->lRz,
-        st->rglSlider[0], st->rglSlider[1],
-        st->rgdwPOV[0], st->rgdwPOV[1], st->rgdwPOV[2], st->rgdwPOV[3]
-    );
+    //wprintf(L"Ax: (%4d,%4d,%4d) RAx: (%4d,%4d,%4d) Slider: (%4d,%4d)  nPov: (%4d,%4d,%4d,%4d)\n",
+    //    st->lX, st->lY, st->lZ, st->lRx, st->lRy, st->lRz,
+    //    st->rglSlider[0], st->rglSlider[1],
+    //    st->rgdwPOV[0], st->rgdwPOV[1], st->rgdwPOV[2], st->rgdwPOV[3]
+    //);
     ed_fm_set_command(2003, st->lRz / 1000.0);
     ed_fm_set_command(2004, st->lZ / 1000.0);
     ed_fm_set_command(2002, st->lX / 1000.0);

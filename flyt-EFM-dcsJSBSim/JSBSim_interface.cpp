@@ -258,7 +258,9 @@ FGJSBsim::FGJSBsim(double dt)
         fdmex->Setdt(dt);
     else
         fdmex->Setdt(0.006);
-    fdmex->Setdt(0.006);//TODO: Fix dt
+    printf("dt %5.3f\n",dt);
+    
+ //   fdmex->Setdt(0.006);//TODO: Fix dt
     std::string aircraft_model("efm-aero");
     auto aircraft_path = SGPath(root_folder + ("/EFM"));
     auto engine_path = SGPath(root_folder + ("/EFM/engines"));
@@ -271,7 +273,10 @@ FGJSBsim::FGJSBsim(double dt)
 
     PropsVisitor v(PropertyManager->GetNode(), "");
     Element* document = XMLFileRead.LoadXMLDocument(config_file, v);
-    aircraft_model = PropertyManager->GetNode()->GetString("/sim/aero", aircraft_model);
+    SGPropertyNode* aeroNode = PropertyManager->GetNode(std::string("/sim/aero"));
+    if (aeroNode == nullptr)
+        throw "Missing /sim/aero in config file";
+    aircraft_model = aeroNode->getStringValue();
     
     auto debugNode = PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-level");
     if (debugNode != nullptr)
@@ -524,7 +529,7 @@ void FGJSBsim::update(double dt)
         if (!fdmex->Run()) {
             // The property fdm/jsbsim/simulation/terminate has been set to true
             // by the user. The sim is considered crashed.
-            printf("Crashed \n");
+            //printf("Crashed \n");
             crashed = true;
             break;
         }
@@ -1562,7 +1567,9 @@ void FGJSBsim::update_external_forces(double t_off)
 void FGJSBsim::set_roll_pitch_yaw(double roll_rad, double pitch_rad, double yaw_rad)
 {
     JSBSim::FGQuaternion quat(roll_rad, pitch_rad, yaw_rad);
-    Propagate->VState.qAttitudeLocal = quat;
+    auto vstate = Propagate->GetVState();
+    vstate.qAttitudeLocal = quat;
+    Propagate->SetVState(vstate);
 }
 
 void FGJSBsim::set_velocities_u_aero_fps(double v)
@@ -1582,7 +1589,7 @@ void FGJSBsim::set_velocities_w_aero_fps(double v)
 
 void FGJSBsim::set_velocities_vt_fps(double v)
 {
-    Auxiliary->Vt = v;
+    Auxiliary->SetVtrueFPS(v);
 
 }
 void FGJSBsim::update()
@@ -1608,14 +1615,14 @@ void FGJSBsim::set_velocities_p_aero_rad_sec(double v)
 
 void FGJSBsim::set_velocities_mach(double v)
 {
-    Auxiliary->Mach = v;
+    Auxiliary->SetMach(v);
 }
 
 void FGJSBsim::set_fcs_elevator_cmd_norm(double v)
 {
     static double ltv = -1000000;
     if (fabs(v - ltv) > 0.001) {
-        printf("Elevator %.2f\n", v);
+        //printf("Elevator %.2f\n", v);
         ltv = v;
         fgSetDouble("/fdm/jsbsim/fcs/elevator-cmd-norm", v);
     }
@@ -1625,7 +1632,7 @@ void FGJSBsim::set_fcs_aileron_cmd_norm(double v)
 {
     static double ltv = -1000000;
     if (fabs(v - ltv) > 0.001) {
-        printf("Aileron %.2f\n", v);
+        //printf("Aileron %.2f\n", v);
         ltv = v;
         fgSetDouble("/fdm/jsbsim/fcs/aileron-cmd-norm", v);
     }
@@ -1634,7 +1641,7 @@ void FGJSBsim::set_fcs_rudder_cmd_norm(double v)
 {
     static double ltv = -1000000;
     if (fabs(v - ltv) > 0.001) {
-        printf("Rudder %.2f\n", v);
+        //printf("Rudder %.2f\n", v);
         ltv = v;
         fgSetDouble("/fdm/jsbsim/fcs/rudder-cmd-norm", v);
     }
@@ -1657,7 +1664,7 @@ void FGJSBsim::set_fcs_throttle_cmd_norm(int e, double v)
         -1000000,
     };
     if (fabs(v - ltv[e]) > 0.001) {
-        printf("Throttle %d %.2f\n",e, v);
+        //printf("Throttle %d %.2f\n",e, v);
         ltv[e] = v;
         if (e == 0)
             fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[0]", v);
@@ -1673,20 +1680,21 @@ void FGJSBsim::set_fcs_throttle_cmd_norm(int e, double v)
 }
 void FGJSBsim::set_atmosphere_rho_slugs_ft3(double v)
 {
-    Atmosphere->Density = v;
+    Atmosphere->SetDensitySL(v);
 }
 double FGJSBsim::get_atmosphere_rho_slugs_ft3()
 {
-    return     Atmosphere->Density;
+    return     Atmosphere->GetDensity();
 
 }
 void FGJSBsim::set_atmosphere_pressure_lbf_ft2(double v)
 {
-    Atmosphere->Pressure = v;
+    //eNoPressUnit = 0, ePSF, eMillibars, ePascals, eInchesHg
+    Atmosphere->SetPressureSL(FGAtmosphere::ePressure::ePSF, v);
 }
 double FGJSBsim::get_atmosphere_pressure_lbf_ft2()
 {
-    return     Atmosphere->Pressure;
+    return     Atmosphere->GetPressure();
 }
 const JSBSim::FGColumnVector3& FGJSBsim::GetXYZcg(void) {
     return MassBalance->GetXYZcg();
@@ -1697,6 +1705,9 @@ const JSBSim::FGColumnVector3& FGJSBsim::GetXYZrp(void) {
 
 void FGJSBsim::set_sound_speed(double v)
 {
+    //double db = Atmosphere->GetSoundSpeed() - v;
+    //if (v > 1)
+    //throw "set_sound_speed not supported";
     Atmosphere->SetSoundSpeed(v);
 }
 void FGJSBsim::set_altitude(double h_ft)
@@ -1706,23 +1717,24 @@ void FGJSBsim::set_altitude(double h_ft)
 
 void FGJSBsim::set_aero_beta_deg(double v)
 {
-    Auxiliary->beta = v;
+    Auxiliary->SetBeta(v);
 }
 
 void FGJSBsim::set_aero_betadot_rad_sec(double v)
 {
-    Auxiliary->adot = v;
+    Auxiliary->Setbdot(v);
 }
 
 void FGJSBsim::set_aero_alpha_deg(double v)
 {
-    Auxiliary->alpha = v;
+    Auxiliary->SetAlpha(v);
 }
 
 void FGJSBsim::set_aero_alphadot_rad_sec(double v)
 {
-    Auxiliary->bdot = v;
+    Auxiliary->Setadot(v);
 }
+
 void FGJSBsim::set_current_state(double ax,	//linear acceleration component in world coordinate system
     double ay,	//linear acceleration component in world coordinate system
     double az,	//linear acceleration component in world coordinate system
@@ -1744,9 +1756,9 @@ void FGJSBsim::set_current_state(double ax,	//linear acceleration component in w
     double quaternion_w	//orientation quaternion components in world coordinate system
 )
 {
-    Auxiliary->Nx = ax * METERS_TO_FEET;
-    Auxiliary->Nz = ay * METERS_TO_FEET;
-    Auxiliary->Ny = az * METERS_TO_FEET;
+    Auxiliary->SetNx(ax * METERS_TO_FEET);
+    Auxiliary->SetNz(ay * METERS_TO_FEET);
+    Auxiliary->SetNy(az * METERS_TO_FEET);
 }
 static double Magnitude(double xv, double yv, double zv)
 {
@@ -1844,19 +1856,21 @@ void FGJSBsim::set_current_state_body_axis(
 }
 void FGJSBsim::set_qbar(double v)
 {
-    Auxiliary->qbar = v;
+    Auxiliary->SetQBar(v);
 }
 void FGJSBsim::set_bi2vel(double v)
 {
-    Aerodynamics->bi2vel = v;
+    if (std::abs(Aerodynamics->GetBI2Vel() - v) > 0.01)
+        printf("bi2vel wrong %f %f\n", v, Aerodynamics->GetBI2Vel());
 }
 void FGJSBsim::set_ci2vel(double v)
 {
-    Aerodynamics->ci2vel = v;
+    if (std::abs(Aerodynamics->GetCI2Vel() - v) > 0.01)
+        printf("ci2vel wrong %f %f\n", v, Aerodynamics->GetCI2Vel());
 }
 void FGJSBsim::set_vc_kts(double v)
 {
-    Auxiliary->vcas = v;
+    Auxiliary->SetVcas(v);
 }
 void FGJSBsim::UpdateWindMatrices()
 {
