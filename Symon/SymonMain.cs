@@ -54,17 +54,19 @@ namespace Symon
         void LoadSelected(string idx)
         {
             if (idx == "<default>") idx = "";
-            var selected_l = (string)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected"+idx, "");
+            var selected_l = (string)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected" + idx, "");
 
             string[] selected = null;
             if (!string.IsNullOrEmpty(selected_l))
                 selected = selected_l.Split(',');
             monitoredVariables.Clear();
-            foreach (var s in selected.Distinct())
+            if (selected != null)
             {
-                monitoredVariables.Add(new DataItem(jsbds, s));
+                foreach (var s in selected.Distinct())
+                {
+                    monitoredVariables.Add(new DataItem(jsbds, s));
+                }
             }
-
         }
 
         void SaveProps()
@@ -146,8 +148,8 @@ namespace Symon
             }
 
         }
-     
-        
+
+
         private async void buttonLoad_Click(object sender, EventArgs e)
         {
             await PerformOperation("Loading properties from simulation", () =>
@@ -211,7 +213,7 @@ namespace Symon
                     di.Update();
                 //foreach (var di in monitoredVariables.OfType<DataItem>())
                 //    di.GetValue();
-//                dataviewsource.ResetBindings(false);
+                //                dataviewsource.ResetBindings(false);
                 ClearError();
 
             }
@@ -224,8 +226,25 @@ namespace Symon
             }
         }
         SortableBindingList<DataItem> monitoredVariables = new SortableBindingList<DataItem>();
-//            BindingList<DataItem> monitoredVariables = new BindingList<DataItem>();
+        //            BindingList<DataItem> monitoredVariables = new BindingList<DataItem>();
+        public void RemoveDuplicates()
+        {
+            var seen = new HashSet<string>();  // Change type as needed
+            var toRemove = new List<DataItem>();
 
+            foreach (var item in monitoredVariables)
+            {
+                if (!seen.Add(item.Name))  // Returns false if already exists
+                {
+                    toRemove.Add(item);
+                }
+            }
+
+            foreach (var item in toRemove)
+            {
+                monitoredVariables.Remove(item);
+            }
+        }
         public bool Monitoring { get; private set; }
         public List<DataItem> Items { get; private set; }
 
@@ -256,6 +275,7 @@ namespace Symon
                 }
                 else
                 {
+                    RemoveDuplicates();
                     if (!jsbds.IsConnected)
                     {
                         buttonDisconnect_Click(sender, e);
@@ -266,7 +286,7 @@ namespace Symon
                     timerMonitor.Start();
                 }
             }
-            catch (SocketException )
+            catch (SocketException)
             {
 
             }
@@ -335,9 +355,9 @@ namespace Symon
         }
         void ShowError(string title, string message)
         {
-            toolStripStatusLabel1.Text = 
-                DateTime.Now.ToString("HH:mm:ss.ff") 
-                + title 
+            toolStripStatusLabel1.Text =
+                DateTime.Now.ToString("HH:mm:ss.ff")
+                + title
                 + message;
         }
         void ClearError()
@@ -354,7 +374,7 @@ namespace Symon
 
         private void button1_Click(object sender, EventArgs e)
         {
-          
+
 
 
         }
@@ -369,6 +389,31 @@ namespace Symon
         {
             SaveSelected(cbSaveIndex.Text);
 
+        }
+
+        private void cbShowJSBTree_CheckedChanged(object sender, EventArgs e)
+        {
+            treeView1.Visible = cbShowJSBTree.Checked;
+        }
+
+        private void btnPaste_Click(object sender, EventArgs e)
+        {
+            // Get the clipboard data
+            if (Clipboard.ContainsText())
+            {
+                string clipboardText = Clipboard.GetText();
+                string[] lines = clipboardText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+
+                foreach (var line in lines.Where(xx => xx.Contains("/")))
+                {
+                    var property = line.Trim();
+                    if (!monitoredVariables.Any(xx => xx.Name == property))
+                    {
+                        var ni = new DataItem(jsbds, line.Trim());
+                        monitoredVariables.Add(ni);
+                    }
+                }
+            }
         }
     }
 }

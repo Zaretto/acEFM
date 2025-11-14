@@ -38,19 +38,20 @@
             this.treeView1 = new System.Windows.Forms.TreeView();
             this.dataGridView1 = new System.Windows.Forms.DataGridView();
             this.panel2 = new System.Windows.Forms.Panel();
+            this.btnSaveSelected = new System.Windows.Forms.Button();
+            this.btnLoadSelected = new System.Windows.Forms.Button();
+            this.cbSaveIndex = new System.Windows.Forms.ComboBox();
             this.addRowButton = new System.Windows.Forms.Button();
             this.buttonUpdate = new System.Windows.Forms.Button();
             this.buttonSave = new System.Windows.Forms.Button();
-            this.buttonLoad = new System.Windows.Forms.Button();
             this.buttonDisconnect = new System.Windows.Forms.Button();
             this.buttonReload = new System.Windows.Forms.Button();
-            this.buttonClear = new System.Windows.Forms.Button();
             this.buttonMonitor = new System.Windows.Forms.Button();
+            this.buttonClear = new System.Windows.Forms.Button();
             this.statusStrip1 = new System.Windows.Forms.StatusStrip();
             this.toolStripStatusLabel1 = new System.Windows.Forms.ToolStripStatusLabel();
-            this.cbSaveIndex = new System.Windows.Forms.ComboBox();
-            this.btnLoadSelected = new System.Windows.Forms.Button();
-            this.btnSaveSelected = new System.Windows.Forms.Button();
+            this.cbShowJSBTree = new System.Windows.Forms.CheckBox();
+            this.btnPaste = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
             this.splitContainer1.Panel1.SuspendLayout();
@@ -96,7 +97,7 @@
             // 
             this.splitContainer1.Panel2.Controls.Add(this.dataGridView1);
             this.splitContainer1.Size = new System.Drawing.Size(979, 828);
-            this.splitContainer1.SplitterDistance = 498;
+            this.splitContainer1.SplitterDistance = 315;
             this.splitContainer1.TabIndex = 19;
             // 
             // groupBoxBusy
@@ -135,7 +136,7 @@
             this.treeView1.Location = new System.Drawing.Point(3, 3);
             this.treeView1.Name = "treeView1";
             this.treeView1.PathSeparator = "/";
-            this.treeView1.Size = new System.Drawing.Size(492, 822);
+            this.treeView1.Size = new System.Drawing.Size(309, 822);
             this.treeView1.TabIndex = 17;
             this.treeView1.DoubleClick += new System.EventHandler(this.treeView1_DoubleClick);
             // 
@@ -149,124 +150,47 @@
             this.dataGridView1.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.dataGridView1.Location = new System.Drawing.Point(3, 3);
             this.dataGridView1.Name = "dataGridView1";
-            this.dataGridView1.Size = new System.Drawing.Size(471, 822);
+            this.dataGridView1.Size = new System.Drawing.Size(654, 822);
             this.dataGridView1.TabIndex = 16;
             // 
             // panel2
             // 
             this.panel2.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.panel2.Controls.Add(this.btnPaste);
             this.panel2.Controls.Add(this.btnSaveSelected);
             this.panel2.Controls.Add(this.btnLoadSelected);
+            this.panel2.Controls.Add(this.buttonClear);
             this.panel2.Controls.Add(this.cbSaveIndex);
             this.panel2.Controls.Add(this.addRowButton);
             this.panel2.Controls.Add(this.buttonUpdate);
             this.panel2.Controls.Add(this.buttonSave);
-            this.panel2.Controls.Add(this.buttonLoad);
             this.panel2.Controls.Add(this.buttonDisconnect);
             this.panel2.Controls.Add(this.buttonReload);
-            this.panel2.Controls.Add(this.buttonClear);
             this.panel2.Controls.Add(this.buttonMonitor);
             this.panel2.Location = new System.Drawing.Point(3, 837);
             this.panel2.Name = "panel2";
             this.panel2.Size = new System.Drawing.Size(1049, 31);
             this.panel2.TabIndex = 17;
             // 
-            // addRowButton
+            // btnSaveSelected
             // 
-            this.addRowButton.Location = new System.Drawing.Point(577, 3);
-            this.addRowButton.Name = "addRowButton";
-            this.addRowButton.Size = new System.Drawing.Size(35, 26);
-            this.addRowButton.TabIndex = 36;
-            this.addRowButton.Text = "+";
-            this.addRowButton.UseVisualStyleBackColor = true;
-            this.addRowButton.Click += new System.EventHandler(this.addRowButton_Click);
+            this.btnSaveSelected.Location = new System.Drawing.Point(641, 3);
+            this.btnSaveSelected.Name = "btnSaveSelected";
+            this.btnSaveSelected.Size = new System.Drawing.Size(75, 26);
+            this.btnSaveSelected.TabIndex = 39;
+            this.btnSaveSelected.Text = "save sel";
+            this.btnSaveSelected.UseVisualStyleBackColor = true;
+            this.btnSaveSelected.Click += new System.EventHandler(this.btnSaveSelected_Click);
             // 
-            // buttonUpdate
+            // btnLoadSelected
             // 
-            this.buttonUpdate.Location = new System.Drawing.Point(97, 3);
-            this.buttonUpdate.Name = "buttonUpdate";
-            this.buttonUpdate.Size = new System.Drawing.Size(51, 26);
-            this.buttonUpdate.TabIndex = 31;
-            this.buttonUpdate.Text = "update";
-            this.buttonUpdate.UseVisualStyleBackColor = true;
-            this.buttonUpdate.Click += new System.EventHandler(this.buttonUpdate_Click);
-            // 
-            // buttonSave
-            // 
-            this.buttonSave.Location = new System.Drawing.Point(473, 3);
-            this.buttonSave.Name = "buttonSave";
-            this.buttonSave.Size = new System.Drawing.Size(67, 26);
-            this.buttonSave.TabIndex = 35;
-            this.buttonSave.Text = "save def";
-            this.buttonSave.UseVisualStyleBackColor = true;
-            this.buttonSave.Click += new System.EventHandler(this.buttonSave_Click);
-            // 
-            // buttonLoad
-            // 
-            this.buttonLoad.Location = new System.Drawing.Point(3, 3);
-            this.buttonLoad.Name = "buttonLoad";
-            this.buttonLoad.Size = new System.Drawing.Size(51, 26);
-            this.buttonLoad.TabIndex = 29;
-            this.buttonLoad.Text = "load";
-            this.buttonLoad.UseVisualStyleBackColor = true;
-            this.buttonLoad.Click += new System.EventHandler(this.buttonLoad_Click);
-            // 
-            // buttonDisconnect
-            // 
-            this.buttonDisconnect.Location = new System.Drawing.Point(396, 3);
-            this.buttonDisconnect.Name = "buttonDisconnect";
-            this.buttonDisconnect.Size = new System.Drawing.Size(71, 26);
-            this.buttonDisconnect.TabIndex = 34;
-            this.buttonDisconnect.Text = "disconnect";
-            this.buttonDisconnect.UseVisualStyleBackColor = true;
-            this.buttonDisconnect.Click += new System.EventHandler(this.buttonDisconnect_Click);
-            // 
-            // buttonReload
-            // 
-            this.buttonReload.Location = new System.Drawing.Point(339, 3);
-            this.buttonReload.Name = "buttonReload";
-            this.buttonReload.Size = new System.Drawing.Size(51, 26);
-            this.buttonReload.TabIndex = 30;
-            this.buttonReload.Text = "reload";
-            this.buttonReload.UseVisualStyleBackColor = true;
-            this.buttonReload.Click += new System.EventHandler(this.buttonReload_Click);
-            // 
-            // buttonClear
-            // 
-            this.buttonClear.Location = new System.Drawing.Point(241, 3);
-            this.buttonClear.Name = "buttonClear";
-            this.buttonClear.Size = new System.Drawing.Size(51, 26);
-            this.buttonClear.TabIndex = 33;
-            this.buttonClear.Text = "clear";
-            this.buttonClear.UseVisualStyleBackColor = true;
-            this.buttonClear.Click += new System.EventHandler(this.buttonClear_Click);
-            // 
-            // buttonMonitor
-            // 
-            this.buttonMonitor.Location = new System.Drawing.Point(154, 3);
-            this.buttonMonitor.Name = "buttonMonitor";
-            this.buttonMonitor.Size = new System.Drawing.Size(51, 26);
-            this.buttonMonitor.TabIndex = 32;
-            this.buttonMonitor.Text = "monitor";
-            this.buttonMonitor.UseVisualStyleBackColor = true;
-            this.buttonMonitor.Click += new System.EventHandler(this.buttonMonitor_Click);
-            // 
-            // statusStrip1
-            // 
-            this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.toolStripStatusLabel1});
-            this.statusStrip1.Location = new System.Drawing.Point(0, 897);
-            this.statusStrip1.Name = "statusStrip1";
-            this.statusStrip1.Size = new System.Drawing.Size(1101, 22);
-            this.statusStrip1.TabIndex = 9;
-            this.statusStrip1.Text = "statusStrip1";
-            // 
-            // toolStripStatusLabel1
-            // 
-            this.toolStripStatusLabel1.Name = "toolStripStatusLabel1";
-            this.toolStripStatusLabel1.Size = new System.Drawing.Size(118, 17);
-            this.toolStripStatusLabel1.Text = "toolStripStatusLabel1";
-            this.toolStripStatusLabel1.Click += new System.EventHandler(this.toolStripStatusLabel1_Click);
+            this.btnLoadSelected.Location = new System.Drawing.Point(521, 1);
+            this.btnLoadSelected.Name = "btnLoadSelected";
+            this.btnLoadSelected.Size = new System.Drawing.Size(73, 26);
+            this.btnLoadSelected.TabIndex = 38;
+            this.btnLoadSelected.Text = "load sel";
+            this.btnLoadSelected.UseVisualStyleBackColor = true;
+            this.btnLoadSelected.Click += new System.EventHandler(this.btnLoadSelected_Click);
             // 
             // cbSaveIndex
             // 
@@ -289,36 +213,127 @@
             "14",
             "15",
             "16"});
-            this.cbSaveIndex.Location = new System.Drawing.Point(628, 6);
+            this.cbSaveIndex.Location = new System.Drawing.Point(422, 4);
             this.cbSaveIndex.Name = "cbSaveIndex";
             this.cbSaveIndex.Size = new System.Drawing.Size(93, 21);
             this.cbSaveIndex.TabIndex = 37;
             // 
-            // btnLoadSelected
+            // addRowButton
             // 
-            this.btnLoadSelected.Location = new System.Drawing.Point(727, 5);
-            this.btnLoadSelected.Name = "btnLoadSelected";
-            this.btnLoadSelected.Size = new System.Drawing.Size(73, 26);
-            this.btnLoadSelected.TabIndex = 38;
-            this.btnLoadSelected.Text = "load sel";
-            this.btnLoadSelected.UseVisualStyleBackColor = true;
-            this.btnLoadSelected.Click += new System.EventHandler(this.btnLoadSelected_Click);
+            this.addRowButton.Location = new System.Drawing.Point(371, 1);
+            this.addRowButton.Name = "addRowButton";
+            this.addRowButton.Size = new System.Drawing.Size(35, 26);
+            this.addRowButton.TabIndex = 36;
+            this.addRowButton.Text = "+";
+            this.addRowButton.UseVisualStyleBackColor = true;
+            this.addRowButton.Click += new System.EventHandler(this.addRowButton_Click);
             // 
-            // btnSaveSelected
+            // buttonUpdate
             // 
-            this.btnSaveSelected.Location = new System.Drawing.Point(806, 6);
-            this.btnSaveSelected.Name = "btnSaveSelected";
-            this.btnSaveSelected.Size = new System.Drawing.Size(75, 26);
-            this.btnSaveSelected.TabIndex = 39;
-            this.btnSaveSelected.Text = "save sel";
-            this.btnSaveSelected.UseVisualStyleBackColor = true;
-            this.btnSaveSelected.Click += new System.EventHandler(this.btnSaveSelected_Click);
+            this.buttonUpdate.Location = new System.Drawing.Point(300, 3);
+            this.buttonUpdate.Name = "buttonUpdate";
+            this.buttonUpdate.Size = new System.Drawing.Size(51, 26);
+            this.buttonUpdate.TabIndex = 31;
+            this.buttonUpdate.Text = "update";
+            this.buttonUpdate.UseVisualStyleBackColor = true;
+            this.buttonUpdate.Click += new System.EventHandler(this.buttonUpdate_Click);
+            // 
+            // buttonSave
+            // 
+            this.buttonSave.Location = new System.Drawing.Point(170, 2);
+            this.buttonSave.Name = "buttonSave";
+            this.buttonSave.Size = new System.Drawing.Size(67, 26);
+            this.buttonSave.TabIndex = 35;
+            this.buttonSave.Text = "save def";
+            this.buttonSave.UseVisualStyleBackColor = true;
+            this.buttonSave.Click += new System.EventHandler(this.buttonSave_Click);
+            // 
+            // buttonDisconnect
+            // 
+            this.buttonDisconnect.Location = new System.Drawing.Point(93, 2);
+            this.buttonDisconnect.Name = "buttonDisconnect";
+            this.buttonDisconnect.Size = new System.Drawing.Size(71, 26);
+            this.buttonDisconnect.TabIndex = 34;
+            this.buttonDisconnect.Text = "disconnect";
+            this.buttonDisconnect.UseVisualStyleBackColor = true;
+            this.buttonDisconnect.Click += new System.EventHandler(this.buttonDisconnect_Click);
+            // 
+            // buttonReload
+            // 
+            this.buttonReload.Location = new System.Drawing.Point(6, 3);
+            this.buttonReload.Name = "buttonReload";
+            this.buttonReload.Size = new System.Drawing.Size(51, 26);
+            this.buttonReload.TabIndex = 30;
+            this.buttonReload.Text = "get jsb";
+            this.buttonReload.UseVisualStyleBackColor = true;
+            this.buttonReload.Click += new System.EventHandler(this.buttonReload_Click);
+            // 
+            // buttonMonitor
+            // 
+            this.buttonMonitor.Location = new System.Drawing.Point(243, 2);
+            this.buttonMonitor.Name = "buttonMonitor";
+            this.buttonMonitor.Size = new System.Drawing.Size(51, 26);
+            this.buttonMonitor.TabIndex = 32;
+            this.buttonMonitor.Text = "Monitor";
+            this.buttonMonitor.UseVisualStyleBackColor = true;
+            this.buttonMonitor.Click += new System.EventHandler(this.buttonMonitor_Click);
+            // 
+            // buttonClear
+            // 
+            this.buttonClear.Location = new System.Drawing.Point(722, 3);
+            this.buttonClear.Name = "buttonClear";
+            this.buttonClear.Size = new System.Drawing.Size(51, 26);
+            this.buttonClear.TabIndex = 33;
+            this.buttonClear.Text = "clear";
+            this.buttonClear.UseVisualStyleBackColor = true;
+            this.buttonClear.Click += new System.EventHandler(this.buttonClear_Click);
+            // 
+            // statusStrip1
+            // 
+            this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.toolStripStatusLabel1});
+            this.statusStrip1.Location = new System.Drawing.Point(0, 897);
+            this.statusStrip1.Name = "statusStrip1";
+            this.statusStrip1.Size = new System.Drawing.Size(1101, 22);
+            this.statusStrip1.TabIndex = 9;
+            this.statusStrip1.Text = "statusStrip1";
+            // 
+            // toolStripStatusLabel1
+            // 
+            this.toolStripStatusLabel1.Name = "toolStripStatusLabel1";
+            this.toolStripStatusLabel1.Size = new System.Drawing.Size(118, 17);
+            this.toolStripStatusLabel1.Text = "toolStripStatusLabel1";
+            this.toolStripStatusLabel1.Click += new System.EventHandler(this.toolStripStatusLabel1_Click);
+            // 
+            // cbShowJSBTree
+            // 
+            this.cbShowJSBTree.AutoSize = true;
+            this.cbShowJSBTree.Checked = true;
+            this.cbShowJSBTree.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.cbShowJSBTree.Location = new System.Drawing.Point(0, -2);
+            this.cbShowJSBTree.Name = "cbShowJSBTree";
+            this.cbShowJSBTree.Size = new System.Drawing.Size(91, 17);
+            this.cbShowJSBTree.TabIndex = 17;
+            this.cbShowJSBTree.Text = "JSBSim props";
+            this.cbShowJSBTree.UseVisualStyleBackColor = true;
+            this.cbShowJSBTree.CheckedChanged += new System.EventHandler(this.cbShowJSBTree_CheckedChanged);
+            // 
+            // btnPaste
+            // 
+            this.btnPaste.Location = new System.Drawing.Point(808, 4);
+            this.btnPaste.Name = "btnPaste";
+            this.btnPaste.Size = new System.Drawing.Size(75, 23);
+            this.btnPaste.TabIndex = 40;
+            this.btnPaste.Text = "paste";
+            this.btnPaste.UseVisualStyleBackColor = true;
+            this.btnPaste.Click += new System.EventHandler(this.btnPaste_Click);
             // 
             // SymonMain
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(1101, 919);
+            this.Controls.Add(this.cbShowJSBTree);
             this.Controls.Add(this.statusStrip1);
             this.Controls.Add(this.panel1);
             this.Name = "SymonMain";
@@ -346,7 +361,6 @@
         private System.Windows.Forms.Panel panel2;
         private System.Windows.Forms.Button buttonUpdate;
         private System.Windows.Forms.Button buttonSave;
-        private System.Windows.Forms.Button buttonLoad;
         private System.Windows.Forms.Button buttonDisconnect;
         private System.Windows.Forms.Button buttonReload;
         private System.Windows.Forms.Button buttonClear;
@@ -363,6 +377,8 @@
         private System.Windows.Forms.ComboBox cbSaveIndex;
         private System.Windows.Forms.Button btnSaveSelected;
         private System.Windows.Forms.Button btnLoadSelected;
+        private System.Windows.Forms.CheckBox cbShowJSBTree;
+        private System.Windows.Forms.Button btnPaste;
     }
 }
 
