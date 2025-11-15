@@ -10,8 +10,10 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Reflection.Emit;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Xml.Linq;
 
 namespace Symon
 {
@@ -395,7 +397,55 @@ namespace Symon
         {
             treeView1.Visible = cbShowJSBTree.Checked;
         }
+        static string ExtractPropertyName(string input)
+        {
+            input = input.Trim();
+            try
+            {
+                // Try to parse as XML
+                var element = XElement.Parse(input);
 
+                if (element.Name == "property")
+                {
+                    // Property name is inside the element text
+                    return element.Value.Trim();
+                }
+                else if (element.Name == "fcs_function" || element.Name == "function")
+                {
+                    // Property name is in the "property" attribute
+                    return element.Attribute("name")?.Value.Trim();
+                }
+                if (!string.IsNullOrEmpty(element.Value) &&  element.Value.Contains("/"))
+                    return element.Value.Trim();
+            }
+            catch
+            {
+            }
+            // Case 2: Handle malformed/unclosed tags with regex
+            // Regex explanation:
+            // (?:<property[^>]*>)? → optional opening <property> tag (with or without attributes)
+            // ([^<]+) → capture the property name (everything until a '<')
+            // (?:</property>)? → optional closing </property> tag
+            if (input.StartsWith("<"))
+            {
+                // Look for property="..."
+                var matchProperty = Regex.Match(input, @"\bproperty\s*=\s*""([^""]+)""");
+                if (matchProperty.Success)
+                    return matchProperty.Groups[1].Value.Trim();
+
+                // Look for name="..."
+                var matchName = Regex.Match(input, @"\bname\s*=\s*""([^""]+)""");
+                if (matchName.Success)
+                    return matchName.Groups[1].Value.Trim();
+            }
+            else
+            {
+                var parts = input.Split(' ');
+                if (parts[0].Contains("/"))
+                    return parts[0];
+            }
+            return null;
+        }
         private void btnPaste_Click(object sender, EventArgs e)
         {
             // Get the clipboard data
@@ -406,10 +456,10 @@ namespace Symon
 
                 foreach (var line in lines.Where(xx => xx.Contains("/")))
                 {
-                    var property = line.Trim();
-                    if (!monitoredVariables.Any(xx => xx.Name == property))
+                    var property = ExtractPropertyName(line);
+                    if (!string.IsNullOrEmpty(property) && !monitoredVariables.Any(xx => xx.Name == property))
                     {
-                        var ni = new DataItem(jsbds, line.Trim());
+                        var ni = new DataItem(jsbds, property);
                         monitoredVariables.Add(ni);
                     }
                 }

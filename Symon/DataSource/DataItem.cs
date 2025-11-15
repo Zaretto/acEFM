@@ -57,7 +57,15 @@ public class DataItem : INotifyPropertyChanged
             }
         }
     }
-
+    public double? DoubleValue
+    {
+        get
+        {
+            if (double.TryParse(value, out var rv))
+                return rv;
+            return null;
+        }
+    }
     //public bool Plot
     //{
     //    get => plot;
