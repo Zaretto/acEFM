@@ -21,18 +21,19 @@ namespace Symon
     {
         private DataSourceJSBSim jsbds;
         private BindingSource dataviewsource;
-
+        private readonly StripChartContainer stripCharts = new StripChartContainer();
         public SymonMain()
         {
             InitializeComponent();
             jsbds = new DataSourceJSBSim("127.0.0.1", 1137);
-            //dataGridView1.Columns.Add("Property", "Property");
-            //dataGridView1.Columns.Add("Value", "Value");
-            //this.dataGridView1.AutoGenerateColumns = true;
-            //this.dataGridView1.DataSource = monitoredVariables;
+
             dataviewsource = new BindingSource();
             dataviewsource.DataSource = monitoredVariables;
             dataGridView1.DataSource = dataviewsource;
+
+            // now add the strip charts on the left;
+            stripCharts.Dock = DockStyle.Fill;
+            splitContainer1.Panel1.Controls.Add(stripCharts);
         }
         protected async override void OnShown(EventArgs e)
         {
@@ -48,7 +49,7 @@ namespace Symon
             if (idx == "<default>") idx = "";
             if (monitoredVariables.Count > 0)
             {
-                var vals = String.Join(",", monitoredVariables.OfType<DataItem>().Select(xx => xx.Name));
+                var vals = String.Join(",", monitoredVariables.OfType<DataItem>().Select(xx => xx.Name+(stripCharts.IsPlotted(xx.Name)? "~":"")));
                 Registry.SetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected" + idx, vals);
             }
 
@@ -62,13 +63,18 @@ namespace Symon
             if (!string.IsNullOrEmpty(selected_l))
                 selected = selected_l.Split(',');
             monitoredVariables.Clear();
+            stripCharts.Clear();
             if (selected != null)
             {
                 foreach (var s in selected.Distinct())
                 {
-                    monitoredVariables.Add(new DataItem(jsbds, s));
+                    var property = s.Trim('~');
+                    var di = NewDataItem(property);
+                    if (s.EndsWith("~"))
+                        stripCharts.AddDataItem(di);
                 }
             }
+            StartMonitoring();
         }
 
         void SaveProps()
@@ -87,53 +93,48 @@ namespace Symon
             //var index = dataGridView1.Rows.Add();
             //dataGridView1.Rows[index].Cells["Property"].Value = treeView1.SelectedNode.Text;
             //dataGridView1.Rows[index].Cells["Value"].Value = jsbds.GetValue(treeView1.SelectedNode.Text);
-            //this.dataGridView1.DataSource = null;
-            delegateToMainThread(() =>
-            {
-                try
-                {
-                    if (!string.IsNullOrEmpty(props))
-                    {
-                        Items = jsbds.LoadFrom(props.Split(','));
-                        TreeNode parentNode;
-                        foreach (var di in Items.OrderBy(xx => xx.GetName()))
-                        {
-                            parentNode = treeView1.Nodes.Add(di.GetName());
-                            parentNode.Tag = di;
-                        }
-                        treeView1.ExpandAll();
-                    }
-                    LoadSelected("");
-                    ClearError();
-                }
-                catch (SocketException ex)
-                {
-                    ShowError("Socket exception ", ex.Message);
-                }
+            //delegateToMainThread(() =>
+            //{
+            //    try
+            //    {
+            //        if (!string.IsNullOrEmpty(props))
+            //        {
+            //            Items = jsbds.LoadFrom(props.Split(','));
+            //            TreeNode parentNode;
+            //            foreach (var di in Items.OrderBy(xx => xx.GetName()))
+            //            {
+            //                parentNode = treeView1.Nodes.Add(di.GetName());
+            //                parentNode.Tag = di;
+            //            }
+            //            treeView1.ExpandAll();
+            //        }
+            //        LoadSelected("");
+            //        ClearError();
+            //    }
+            //    catch (SocketException ex)
+            //    {
+            //        ShowError("Socket exception ", ex.Message);
+            //    }
 
-            });
-            //this.dataGridView1.DataSource = dataviewsource;
-            //dataviewsource.ResetBindings(false);
-            //dataviewsource.EndEdit();
-            //dataGridView1.EndEdit();
+            //});
 
         }
         private void LoadProperties()
         {
             try
             {
-                TreeNode parentNode;
+                //TreeNode parentNode;
                 Items = jsbds.GetItems("/");
-                delegateToMainThread(() =>
-                {
-                    treeView1.Nodes.Clear();
-                    foreach (var di in Items.OrderBy(xx => xx.GetName()))
-                    {
-                        parentNode = treeView1.Nodes.Add(di.GetName());
-                        parentNode.Tag = di;
-                    }
-                    treeView1.ExpandAll();
-                });
+                //delegateToMainThread(() =>
+                //{
+                //    treeView1.Nodes.Clear();
+                //    foreach (var di in Items.OrderBy(xx => xx.GetName()))
+                //    {
+                //        parentNode = treeView1.Nodes.Add(di.GetName());
+                //        parentNode.Tag = di;
+                //    }
+                //    treeView1.ExpandAll();
+                //});
                 ClearError();
 
             }
@@ -218,6 +219,7 @@ namespace Symon
                 //                dataviewsource.ResetBindings(false);
                 ClearError();
 
+                stripCharts.Invalidate();
             }
             catch (SocketException ex)
             {
@@ -252,17 +254,22 @@ namespace Symon
 
         private void treeView1_DoubleClick(object sender, EventArgs e)
         {
-            //this.dataGridView1.DataSource = null;
-            monitoredVariables.Add(treeView1.SelectedNode.Tag as DataItem);
-            //var index = dataGridView1.Rows.Add();
-            //dataGridView1.Rows[index].Cells["Property"].Value = treeView1.SelectedNode.Text;
-            //dataGridView1.Rows[index].Cells["Value"].Value = jsbds.GetValue(treeView1.SelectedNode.Text);
-            //this.dataGridView1.DataSource = null;
-            //dataviewsource.ResetBindings(false);
-            //this.dataGridView1.DataSource = dataviewsource;
-            //dataviewsource.ResetBindings(false);
-            //dataviewsource.EndEdit();
-            //dataGridView1.EndEdit();
+            //monitoredVariables.Add(treeView1.SelectedNode.Tag as DataItem);
+        }
+        private void StartMonitoring()
+        {
+            if (Monitoring)
+                return;
+            if (!jsbds.IsConnected)
+            {
+                jsbds.CloseConnection();
+            }
+            jsbds.OpenConnection();
+            Monitoring = true;
+            buttonMonitor.Text = "Stop Monitoring";
+            timerMonitor.Interval = 500;
+            timerMonitor.Start();
+
         }
 
         private void buttonMonitor_Click(object sender, EventArgs e)
@@ -309,6 +316,7 @@ namespace Symon
 
             monitoredVariables.Clear();
             dataGridView1.Invalidate();
+            stripCharts.Clear();
         }
 
         private void buttonDisconnect_Click(object sender, EventArgs e)
@@ -370,8 +378,7 @@ namespace Symon
 
         private void addRowButton_Click(object sender, EventArgs e)
         {
-            var ni = new DataItem(jsbds, "");
-            monitoredVariables.Add(ni);
+            NewDataItem("");
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -395,7 +402,7 @@ namespace Symon
 
         private void cbShowJSBTree_CheckedChanged(object sender, EventArgs e)
         {
-            treeView1.Visible = cbShowJSBTree.Checked;
+            //treeView1.Visible = cbShowJSBTree.Checked;
         }
         static string ExtractPropertyName(string input)
         {
@@ -415,7 +422,7 @@ namespace Symon
                     // Property name is in the "property" attribute
                     return element.Attribute("name")?.Value.Trim();
                 }
-                if (!string.IsNullOrEmpty(element.Value) &&  element.Value.Contains("/"))
+                if (!string.IsNullOrEmpty(element.Value) && element.Value.Contains("/"))
                     return element.Value.Trim();
             }
             catch
@@ -459,10 +466,51 @@ namespace Symon
                     var property = ExtractPropertyName(line);
                     if (!string.IsNullOrEmpty(property) && !monitoredVariables.Any(xx => xx.Name == property))
                     {
-                        var ni = new DataItem(jsbds, property);
-                        monitoredVariables.Add(ni);
+                        NewDataItem(property);
                     }
                 }
+            }
+        }
+        protected DataItem NewDataItem(string property)
+        {
+            if (property.Contains("\r"))
+                property = property.Split('\r')[0];
+            if (property.Contains("\n"))
+                property = property.Split('\n')[0];
+
+            var di = new DataItem(jsbds, property);
+            monitoredVariables.Add(di);
+            dataGridView1.Columns[0].Width = 300;
+            dataGridView1.Columns[1].Width = 100;
+            return di;
+
+        }
+        private void btnPlot_Click(object sender, EventArgs e)
+        {
+            var selectedItems = new List<DataItem>();
+
+            foreach (DataGridViewRow row in dataGridView1.SelectedRows)
+            {
+                if (row.DataBoundItem is DataItem item)
+                {
+                    stripCharts.AddDataItem(item);
+                }
+            }
+        }
+
+        private void cbSaveIndex_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            LoadSelected(cbSaveIndex.Text);
+
+        }
+
+        private void cbSaveIndex_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                var typedText = cbSaveIndex.Text;
+                LoadSelected(typedText);
+                e.Handled = true; // optional: prevent ding sound
             }
         }
     }

@@ -62,6 +62,12 @@
     <Compile Include="DataSource\DataSourceJSBSim.cs" />
     <Compile Include="DataSource\PropertyComparer.cs" />
     <Compile Include="SortableBindingList.cs" />
+    <Compile Include="StripChart.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="StripChartContainer.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="SymonMain.cs">
       <SubType>Form</SubType>
     </Compile>
