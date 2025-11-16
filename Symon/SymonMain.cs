@@ -513,5 +513,22 @@ namespace Symon
                 e.Handled = true; // optional: prevent ding sound
             }
         }
+
+        private void btnCopy_Click(object sender, EventArgs e)
+        {
+            var vars = new List<string>();
+            foreach (DataGridViewRow row in dataGridView1.SelectedRows)
+            {
+                if (row.DataBoundItem is DataItem item)
+                {
+                    vars.Add(string.Format("<property value=\"{0}\">{1}</property>", item.GetDoubleValue(), item.Name));
+                }
+            }
+            if (vars.Count > 0)
+            {
+                vars.Add("");
+                Clipboard.SetText(string.Join("\r\n", vars));
+            }
+        }
     }
 }

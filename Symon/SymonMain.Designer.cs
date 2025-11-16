@@ -49,6 +49,7 @@
             this.buttonReload = new System.Windows.Forms.Button();
             this.statusStrip1 = new System.Windows.Forms.StatusStrip();
             this.toolStripStatusLabel1 = new System.Windows.Forms.ToolStripStatusLabel();
+            this.btnCopy = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
             this.splitContainer1.Panel1.SuspendLayout();
@@ -140,6 +141,7 @@
             // 
             // panel2
             // 
+            this.panel2.Controls.Add(this.btnCopy);
             this.panel2.Controls.Add(this.btnPaste);
             this.panel2.Controls.Add(this.btnSaveSelected);
             this.panel2.Controls.Add(this.btnLoadSelected);
@@ -158,7 +160,7 @@
             // 
             this.btnPaste.Location = new System.Drawing.Point(12, 3);
             this.btnPaste.Name = "btnPaste";
-            this.btnPaste.Size = new System.Drawing.Size(75, 23);
+            this.btnPaste.Size = new System.Drawing.Size(47, 23);
             this.btnPaste.TabIndex = 40;
             this.btnPaste.Text = "paste";
             this.btnPaste.UseVisualStyleBackColor = true;
@@ -244,7 +246,7 @@
             // 
             // buttonDisconnect
             // 
-            this.buttonDisconnect.Location = new System.Drawing.Point(93, 2);
+            this.buttonDisconnect.Location = new System.Drawing.Point(105, 2);
             this.buttonDisconnect.Name = "buttonDisconnect";
             this.buttonDisconnect.Size = new System.Drawing.Size(71, 26);
             this.buttonDisconnect.TabIndex = 34;
@@ -288,6 +290,16 @@
             this.toolStripStatusLabel1.Size = new System.Drawing.Size(118, 17);
             this.toolStripStatusLabel1.Text = "toolStripStatusLabel1";
             this.toolStripStatusLabel1.Click += new System.EventHandler(this.toolStripStatusLabel1_Click);
+            // 
+            // btnCopy
+            // 
+            this.btnCopy.Location = new System.Drawing.Point(65, 3);
+            this.btnCopy.Name = "btnCopy";
+            this.btnCopy.Size = new System.Drawing.Size(47, 23);
+            this.btnCopy.TabIndex = 40;
+            this.btnCopy.Text = "copy";
+            this.btnCopy.UseVisualStyleBackColor = true;
+            this.btnCopy.Click += new System.EventHandler(this.btnCopy_Click);
             // 
             // SymonMain
             // 
@@ -336,6 +348,7 @@
         private System.Windows.Forms.Button btnLoadSelected;
         private System.Windows.Forms.Button btnPaste;
         private System.Windows.Forms.Button btnPlot;
+        private System.Windows.Forms.Button btnCopy;
     }
 }
 
