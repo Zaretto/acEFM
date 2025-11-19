@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Reflection.Emit;
@@ -22,6 +23,9 @@ namespace Symon
         private DataSourceJSBSim jsbds;
         private BindingSource dataviewsource;
         private readonly StripChartContainer stripCharts = new StripChartContainer();
+        private readonly string RegistrySavePath = @"Software\Symon\Vars";
+        private string RegistrySaveKeyPrefix = "Selected";
+
         public SymonMain()
         {
             InitializeComponent();
@@ -30,7 +34,7 @@ namespace Symon
             dataviewsource = new BindingSource();
             dataviewsource.DataSource = monitoredVariables;
             dataGridView1.DataSource = dataviewsource;
-
+            ReloadSaveList();
             // now add the strip charts on the left;
             stripCharts.Dock = DockStyle.Fill;
             splitContainer1.Panel1.Controls.Add(stripCharts);
@@ -46,35 +50,98 @@ namespace Symon
         }
         void SaveSelected(string idx)
         {
-            if (idx == "<default>") idx = "";
-            if (monitoredVariables.Count > 0)
+            try
             {
-                var vals = String.Join(",", monitoredVariables.OfType<DataItem>().Select(xx => xx.Name+(stripCharts.IsPlotted(xx.Name)? "~":"")));
-                Registry.SetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected" + idx, vals);
-            }
-
-        }
-        void LoadSelected(string idx)
-        {
-            if (idx == "<default>") idx = "";
-            var selected_l = (string)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Selected" + idx, "");
-
-            string[] selected = null;
-            if (!string.IsNullOrEmpty(selected_l))
-                selected = selected_l.Split(',');
-            monitoredVariables.Clear();
-            stripCharts.Clear();
-            if (selected != null)
-            {
-                foreach (var s in selected.Distinct())
+                if (idx == "<default>") idx = "";
+                if (monitoredVariables.Count > 0)
                 {
-                    var property = s.Trim('~');
-                    var di = NewDataItem(property);
-                    if (s.EndsWith("~"))
-                        stripCharts.AddDataItem(di);
+                    var vals = String.Join(",", monitoredVariables.OfType<DataItem>().Select(xx => xx.Name + (stripCharts.IsPlotted(xx.Name) ? "~" : "")));
+                    using (RegistryKey baseKey = Registry.CurrentUser.OpenSubKey(RegistrySavePath, writable: true))
+                    {
+                        if (baseKey != null)
+                        {
+                            baseKey.SetValue(RegistrySaveKeyPrefix + idx, vals);
+                        }
+                    }
                 }
             }
-            StartMonitoring();
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+
+            }
+        }
+        private void ReloadSaveList()
+        {
+            var newList = new List<string>();
+            
+            using (RegistryKey baseKey = Registry.CurrentUser.OpenSubKey(RegistrySavePath))
+            {
+                if (baseKey != null)
+                {
+                    foreach (string subKeyName in baseKey.GetValueNames().Where(xx => xx.StartsWith(RegistrySaveKeyPrefix)))
+                    {
+                        newList.Add(subKeyName.Substring(RegistrySaveKeyPrefix.Length));
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Registry key not found.");
+                }
+            }
+            cbSaveIndex.Items.Clear();
+            cbSaveIndex.Items.AddRange(newList.ToArray());
+        }
+        void ClearSelected(string idx)
+        {
+            // don't need to confirm because easy enough to by saving again.
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistrySavePath, true))
+                {
+                    if (key != null)
+                    {
+                        key.DeleteValue("Selected" + idx);
+                        ReloadSaveList();
+                        cbSaveIndex.Text = "";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowError("Clear: ", ex.Message);
+            }
+        }
+
+        void LoadSelected(string idx)
+        {
+            if (string.IsNullOrEmpty(idx) || idx == "<default>")
+                return;
+
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistrySavePath))
+            {
+                if (key != null)
+                {
+                    var selected_l = key.GetValue("Selected" + idx, "") as string;
+                    string[] selected = null;
+                    if (!string.IsNullOrEmpty(selected_l))
+                        selected = selected_l.Split(',');
+                    monitoredVariables.Clear();
+                    stripCharts.Clear();
+                    if (selected != null)
+                    {
+                        foreach (var s in selected.Distinct())
+                        {
+                            var property = s.Trim('~');
+                            var di = NewDataItem(property);
+                            if (s.EndsWith("~"))
+                                stripCharts.AddDataItem(di);
+                        }
+                    }
+                    StartMonitoring();
+                }
+            }
+
         }
 
         void SaveProps()
@@ -82,42 +149,24 @@ namespace Symon
             if (Items.Any())
             {
                 string vals = String.Join(",", Items.Select(xx => xx.Name));
-                Registry.SetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Properties", vals);
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistrySavePath, writable: true))
+                {
+                    if (key != null)
+                        key.SetValue("Properties", vals);
+                    SaveSelected("");
+                }
             }
-            SaveSelected("");
         }
+
         void LoadProps()
         {
-            var props = (string)Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Symon\Vars", "Properties", "");
-
-            //var index = dataGridView1.Rows.Add();
-            //dataGridView1.Rows[index].Cells["Property"].Value = treeView1.SelectedNode.Text;
-            //dataGridView1.Rows[index].Cells["Value"].Value = jsbds.GetValue(treeView1.SelectedNode.Text);
-            //delegateToMainThread(() =>
-            //{
-            //    try
-            //    {
-            //        if (!string.IsNullOrEmpty(props))
-            //        {
-            //            Items = jsbds.LoadFrom(props.Split(','));
-            //            TreeNode parentNode;
-            //            foreach (var di in Items.OrderBy(xx => xx.GetName()))
-            //            {
-            //                parentNode = treeView1.Nodes.Add(di.GetName());
-            //                parentNode.Tag = di;
-            //            }
-            //            treeView1.ExpandAll();
-            //        }
-            //        LoadSelected("");
-            //        ClearError();
-            //    }
-            //    catch (SocketException ex)
-            //    {
-            //        ShowError("Socket exception ", ex.Message);
-            //    }
-
-            //});
-
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistrySaveKeyPrefix))
+            {
+                if (key != null)
+                {
+                    var props = (string)key.GetValue("Properties", "");
+                }
+            }
         }
         private void LoadProperties()
         {
@@ -230,6 +279,7 @@ namespace Symon
             }
         }
         SortableBindingList<DataItem> monitoredVariables = new SortableBindingList<DataItem>();
+
         //            BindingList<DataItem> monitoredVariables = new BindingList<DataItem>();
         public void RemoveDuplicates()
         {
@@ -388,6 +438,12 @@ namespace Symon
 
         }
 
+        private void btnDeleteSel_Click(object sender, EventArgs e)
+        {
+            ClearSelected(cbSaveIndex.Text);
+
+        }
+
         private void btnLoadSelected_Click(object sender, EventArgs e)
         {
             LoadSelected(cbSaveIndex.Text);
@@ -397,8 +453,9 @@ namespace Symon
         private void btnSaveSelected_Click(object sender, EventArgs e)
         {
             SaveSelected(cbSaveIndex.Text);
-
+            ReloadSaveList();
         }
+
 
         private void cbShowJSBTree_CheckedChanged(object sender, EventArgs e)
         {
@@ -464,9 +521,13 @@ namespace Symon
                 foreach (var line in lines.Where(xx => xx.Contains("/")))
                 {
                     var property = ExtractPropertyName(line);
-                    if (!string.IsNullOrEmpty(property) && !monitoredVariables.Any(xx => xx.Name == property))
+                    if (!string.IsNullOrEmpty(property))
                     {
-                        NewDataItem(property);
+                        property = property.TrimStart('-');
+                        if (!monitoredVariables.Any(xx => xx.Name == property))
+                        {
+                            NewDataItem(property);
+                        }
                     }
                 }
             }
@@ -500,7 +561,8 @@ namespace Symon
 
         private void cbSaveIndex_SelectedIndexChanged(object sender, EventArgs e)
         {
-            LoadSelected(cbSaveIndex.Text);
+            if (!monitoredVariables.Any())
+                LoadSelected(cbSaveIndex.Text);
 
         }
 
@@ -530,5 +592,6 @@ namespace Symon
                 Clipboard.SetText(string.Join("\r\n", vars));
             }
         }
+
     }
 }

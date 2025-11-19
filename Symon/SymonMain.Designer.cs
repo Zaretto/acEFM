@@ -37,6 +37,7 @@
             this.bbLabel = new System.Windows.Forms.Label();
             this.dataGridView1 = new System.Windows.Forms.DataGridView();
             this.panel2 = new System.Windows.Forms.Panel();
+            this.btnCopy = new System.Windows.Forms.Button();
             this.btnPaste = new System.Windows.Forms.Button();
             this.btnSaveSelected = new System.Windows.Forms.Button();
             this.btnLoadSelected = new System.Windows.Forms.Button();
@@ -49,7 +50,7 @@
             this.buttonReload = new System.Windows.Forms.Button();
             this.statusStrip1 = new System.Windows.Forms.StatusStrip();
             this.toolStripStatusLabel1 = new System.Windows.Forms.ToolStripStatusLabel();
-            this.btnCopy = new System.Windows.Forms.Button();
+            this.btnDeleteSel = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.splitContainer1)).BeginInit();
             this.splitContainer1.Panel1.SuspendLayout();
@@ -76,7 +77,7 @@
             this.panel1.Controls.Add(this.buttonReload);
             this.panel1.Location = new System.Drawing.Point(34, 21);
             this.panel1.Name = "panel1";
-            this.panel1.Size = new System.Drawing.Size(771, 886);
+            this.panel1.Size = new System.Drawing.Size(723, 579);
             this.panel1.TabIndex = 8;
             // 
             // splitContainer1
@@ -94,8 +95,8 @@
             // splitContainer1.Panel2
             // 
             this.splitContainer1.Panel2.Controls.Add(this.dataGridView1);
-            this.splitContainer1.Size = new System.Drawing.Size(695, 828);
-            this.splitContainer1.SplitterDistance = 234;
+            this.splitContainer1.Size = new System.Drawing.Size(647, 521);
+            this.splitContainer1.SplitterDistance = 217;
             this.splitContainer1.TabIndex = 19;
             // 
             // groupBoxBusy
@@ -136,11 +137,14 @@
             this.dataGridView1.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.dataGridView1.Location = new System.Drawing.Point(3, 3);
             this.dataGridView1.Name = "dataGridView1";
-            this.dataGridView1.Size = new System.Drawing.Size(521, 822);
+            this.dataGridView1.Size = new System.Drawing.Size(490, 515);
             this.dataGridView1.TabIndex = 16;
             // 
             // panel2
             // 
+            this.panel2.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.panel2.Controls.Add(this.btnDeleteSel);
             this.panel2.Controls.Add(this.btnCopy);
             this.panel2.Controls.Add(this.btnPaste);
             this.panel2.Controls.Add(this.btnSaveSelected);
@@ -151,10 +155,20 @@
             this.panel2.Controls.Add(this.addRowButton);
             this.panel2.Controls.Add(this.buttonDisconnect);
             this.panel2.Controls.Add(this.buttonMonitor);
-            this.panel2.Location = new System.Drawing.Point(3, 837);
+            this.panel2.Location = new System.Drawing.Point(3, 530);
             this.panel2.Name = "panel2";
-            this.panel2.Size = new System.Drawing.Size(1049, 31);
+            this.panel2.Size = new System.Drawing.Size(720, 31);
             this.panel2.TabIndex = 17;
+            // 
+            // btnCopy
+            // 
+            this.btnCopy.Location = new System.Drawing.Point(60, 3);
+            this.btnCopy.Name = "btnCopy";
+            this.btnCopy.Size = new System.Drawing.Size(47, 23);
+            this.btnCopy.TabIndex = 40;
+            this.btnCopy.Text = "copy";
+            this.btnCopy.UseVisualStyleBackColor = true;
+            this.btnCopy.Click += new System.EventHandler(this.btnCopy_Click);
             // 
             // btnPaste
             // 
@@ -168,29 +182,29 @@
             // 
             // btnSaveSelected
             // 
-            this.btnSaveSelected.Location = new System.Drawing.Point(444, 4);
+            this.btnSaveSelected.Location = new System.Drawing.Point(416, 3);
             this.btnSaveSelected.Name = "btnSaveSelected";
-            this.btnSaveSelected.Size = new System.Drawing.Size(75, 26);
+            this.btnSaveSelected.Size = new System.Drawing.Size(58, 23);
             this.btnSaveSelected.TabIndex = 39;
-            this.btnSaveSelected.Text = "save sel";
+            this.btnSaveSelected.Text = "save";
             this.btnSaveSelected.UseVisualStyleBackColor = true;
             this.btnSaveSelected.Click += new System.EventHandler(this.btnSaveSelected_Click);
             // 
             // btnLoadSelected
             // 
-            this.btnLoadSelected.Location = new System.Drawing.Point(365, 4);
+            this.btnLoadSelected.Location = new System.Drawing.Point(362, 3);
             this.btnLoadSelected.Name = "btnLoadSelected";
-            this.btnLoadSelected.Size = new System.Drawing.Size(73, 26);
+            this.btnLoadSelected.Size = new System.Drawing.Size(53, 23);
             this.btnLoadSelected.TabIndex = 38;
-            this.btnLoadSelected.Text = "load sel";
+            this.btnLoadSelected.Text = "load";
             this.btnLoadSelected.UseVisualStyleBackColor = true;
             this.btnLoadSelected.Click += new System.EventHandler(this.btnLoadSelected_Click);
             // 
             // btnPlot
             // 
-            this.btnPlot.Location = new System.Drawing.Point(582, 2);
+            this.btnPlot.Location = new System.Drawing.Point(581, 3);
             this.btnPlot.Name = "btnPlot";
-            this.btnPlot.Size = new System.Drawing.Size(51, 26);
+            this.btnPlot.Size = new System.Drawing.Size(51, 23);
             this.btnPlot.TabIndex = 33;
             this.btnPlot.Text = "plot";
             this.btnPlot.UseVisualStyleBackColor = true;
@@ -198,9 +212,9 @@
             // 
             // buttonClear
             // 
-            this.buttonClear.Location = new System.Drawing.Point(525, 3);
+            this.buttonClear.Location = new System.Drawing.Point(529, 3);
             this.buttonClear.Name = "buttonClear";
-            this.buttonClear.Size = new System.Drawing.Size(51, 26);
+            this.buttonClear.Size = new System.Drawing.Size(51, 23);
             this.buttonClear.TabIndex = 33;
             this.buttonClear.Text = "clear";
             this.buttonClear.UseVisualStyleBackColor = true;
@@ -227,7 +241,7 @@
             "14",
             "15",
             "16"});
-            this.cbSaveIndex.Location = new System.Drawing.Point(266, 7);
+            this.cbSaveIndex.Location = new System.Drawing.Point(268, 3);
             this.cbSaveIndex.Name = "cbSaveIndex";
             this.cbSaveIndex.Size = new System.Drawing.Size(93, 21);
             this.cbSaveIndex.TabIndex = 37;
@@ -236,9 +250,9 @@
             // 
             // addRowButton
             // 
-            this.addRowButton.Location = new System.Drawing.Point(227, 4);
+            this.addRowButton.Location = new System.Drawing.Point(232, 3);
             this.addRowButton.Name = "addRowButton";
-            this.addRowButton.Size = new System.Drawing.Size(35, 26);
+            this.addRowButton.Size = new System.Drawing.Size(35, 23);
             this.addRowButton.TabIndex = 36;
             this.addRowButton.Text = "+";
             this.addRowButton.UseVisualStyleBackColor = true;
@@ -246,9 +260,9 @@
             // 
             // buttonDisconnect
             // 
-            this.buttonDisconnect.Location = new System.Drawing.Point(105, 2);
+            this.buttonDisconnect.Location = new System.Drawing.Point(108, 3);
             this.buttonDisconnect.Name = "buttonDisconnect";
-            this.buttonDisconnect.Size = new System.Drawing.Size(71, 26);
+            this.buttonDisconnect.Size = new System.Drawing.Size(71, 23);
             this.buttonDisconnect.TabIndex = 34;
             this.buttonDisconnect.Text = "disconnect";
             this.buttonDisconnect.UseVisualStyleBackColor = true;
@@ -256,11 +270,11 @@
             // 
             // buttonMonitor
             // 
-            this.buttonMonitor.Location = new System.Drawing.Point(170, 2);
+            this.buttonMonitor.Location = new System.Drawing.Point(180, 3);
             this.buttonMonitor.Name = "buttonMonitor";
-            this.buttonMonitor.Size = new System.Drawing.Size(51, 26);
+            this.buttonMonitor.Size = new System.Drawing.Size(51, 23);
             this.buttonMonitor.TabIndex = 32;
-            this.buttonMonitor.Text = "Monitor";
+            this.buttonMonitor.Text = "monitor";
             this.buttonMonitor.UseVisualStyleBackColor = true;
             this.buttonMonitor.Click += new System.EventHandler(this.buttonMonitor_Click);
             // 
@@ -278,9 +292,9 @@
             // 
             this.statusStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.toolStripStatusLabel1});
-            this.statusStrip1.Location = new System.Drawing.Point(0, 897);
+            this.statusStrip1.Location = new System.Drawing.Point(0, 590);
             this.statusStrip1.Name = "statusStrip1";
-            this.statusStrip1.Size = new System.Drawing.Size(817, 22);
+            this.statusStrip1.Size = new System.Drawing.Size(769, 22);
             this.statusStrip1.TabIndex = 9;
             this.statusStrip1.Text = "statusStrip1";
             // 
@@ -291,21 +305,21 @@
             this.toolStripStatusLabel1.Text = "toolStripStatusLabel1";
             this.toolStripStatusLabel1.Click += new System.EventHandler(this.toolStripStatusLabel1_Click);
             // 
-            // btnCopy
+            // btnDeleteSel
             // 
-            this.btnCopy.Location = new System.Drawing.Point(65, 3);
-            this.btnCopy.Name = "btnCopy";
-            this.btnCopy.Size = new System.Drawing.Size(47, 23);
-            this.btnCopy.TabIndex = 40;
-            this.btnCopy.Text = "copy";
-            this.btnCopy.UseVisualStyleBackColor = true;
-            this.btnCopy.Click += new System.EventHandler(this.btnCopy_Click);
+            this.btnDeleteSel.Location = new System.Drawing.Point(475, 3);
+            this.btnDeleteSel.Name = "btnDeleteSel";
+            this.btnDeleteSel.Size = new System.Drawing.Size(53, 23);
+            this.btnDeleteSel.TabIndex = 41;
+            this.btnDeleteSel.Text = "delete";
+            this.btnDeleteSel.UseVisualStyleBackColor = true;
+            this.btnDeleteSel.Click += new System.EventHandler(this.btnDeleteSel_Click);
             // 
             // SymonMain
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(817, 919);
+            this.ClientSize = new System.Drawing.Size(769, 612);
             this.Controls.Add(this.statusStrip1);
             this.Controls.Add(this.panel1);
             this.Name = "SymonMain";
@@ -349,6 +363,7 @@
         private System.Windows.Forms.Button btnPaste;
         private System.Windows.Forms.Button btnPlot;
         private System.Windows.Forms.Button btnCopy;
+        private System.Windows.Forms.Button btnDeleteSel;
     }
 }
 

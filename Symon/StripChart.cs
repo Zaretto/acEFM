@@ -60,51 +60,64 @@ namespace Symon.DataSource
         public void AddValue(double? value)
         {
             if (value.HasValue)
-            _data.Add((DateTime.Now, value.Value));
+                _data.Add((DateTime.Now, value.Value));
         }
 
         public void DrawChart(Graphics g, Rectangle rect, DateTime cutoff, int displaySeconds)
         {
-            var now = DateTime.Now;
-            var visible = _data.Where(p => p.time >= cutoff).ToList();
-            if (visible.Count > 2)
+            if (_data.Any())
             {
-
-                _minY = visible.Min(p => p.value);
-                _maxY = visible.Max(p => p.value);
-                if (_minY == _maxY) { _minY -= 1; _maxY += 1; }
-
-                var pen = new Pen(Color.Blue, 2);
-                PointF? lastPoint = null;
-
-                foreach (var p in visible)
+                string yTopLabel = "";
+                string yBottomLabel = "";
+                
+                var visible = _data.Where(p => p.time >= cutoff).ToList();
+                if (visible.Count > 2)
                 {
-                    float x = rect.Left + (float)((p.time - cutoff).TotalSeconds / displaySeconds) * rect.Width;
-                    float y = rect.Bottom - (float)((p.value - _minY) / (_maxY - _minY)) * rect.Height;
 
-                    var pt = new PointF(x, y);
-                    if (lastPoint != null)
-                        g.DrawLine(pen, lastPoint.Value, pt);
+                    _minY = visible.Min(p => p.value);
+                    _maxY = visible.Max(p => p.value);
+                    if (_minY == _maxY) { _minY -= 1; _maxY += 1; }
 
-                    lastPoint = pt;
+                    var pen = new Pen(Color.Blue, 2);
+                    PointF? lastPoint = null;
+
+                    foreach (var p in visible)
+                    {
+                        float x = rect.Left + (float)((p.time - cutoff).TotalSeconds / displaySeconds) * rect.Width;
+                        float y = rect.Bottom - (float)((p.value - _minY) / (_maxY - _minY)) * rect.Height;
+
+                        var pt = new PointF(x, y);
+                        if (lastPoint != null)
+                            g.DrawLine(pen, lastPoint.Value, pt);
+
+                        lastPoint = pt;
+                    }
+                    yTopLabel = $"{_maxY:F2}";
+                    yBottomLabel = $"{_minY:F2}";
+                    g.DrawString(yBottomLabel, Font, Brushes.Black, rect.Left, rect.Bottom - Font.Height);
+                    g.DrawString(yTopLabel, Font, Brushes.Black, rect.Left, rect.Top);
                 }
-                g.DrawString($"{_minY:F2}", Font, Brushes.Black, rect.Left, rect.Bottom - Font.Height);
-                g.DrawString($"{_maxY:F2}", Font, Brushes.Black, rect.Left, rect.Top);
-            }
-            g.DrawRectangle(Selected ? Pens.Red : Pens.Black, rect);
-            if (!string.IsNullOrEmpty(DataItem.Name))
-            {
-                var d = g.MeasureString(DataItem.Name, Font);
+                g.DrawRectangle(Selected ? Pens.Red : Pens.Black, rect);
+                if (!string.IsNullOrEmpty(DataItem.Name))
+                {
+                    var d = g.MeasureString(DataItem.Name, Font);
 
-                g.DrawString(DataItem.Name, Font, Brushes.Black, rect.Right - d.Width, rect.Top);
+                    StringFormat format = new StringFormat();
+                    format.Trimming = StringTrimming.EllipsisPath; // or StringTrimming.None
+                    format.FormatFlags = StringFormatFlags.NoWrap;
+                    var labelLen = g.MeasureString(yTopLabel, Font).Width;
+                    RectangleF drawRect = new RectangleF(Math.Max(rect.Left + labelLen, rect.Right - d.Width), rect.Top, rect.Width-labelLen, rect.Height);
+                    g.DrawString(DataItem.Name, Font, Brushes.Black, drawRect, format);
+                }
             }
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-
             var cutoff = DateTime.Now.AddSeconds(-DisplaySeconds);
+            if (_data.Any())
+                cutoff = _data.Max(xx => xx.time).AddSeconds(-DisplaySeconds);
             var paintRectangle = ClientRectangle;
             paintRectangle.Height -= 10;
             paintRectangle.Width -= 1;
