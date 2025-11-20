@@ -1680,7 +1680,7 @@ void FGJSBsim::set_fcs_throttle_cmd_norm(int e, double v)
 }
 void FGJSBsim::set_atmosphere_rho_slugs_ft3(double v)
 {
-    Atmosphere->SetDensitySL(v);
+    Atmosphere->SetDensity(v);
 }
 double FGJSBsim::get_atmosphere_rho_slugs_ft3()
 {
@@ -1689,8 +1689,7 @@ double FGJSBsim::get_atmosphere_rho_slugs_ft3()
 }
 void FGJSBsim::set_atmosphere_pressure_lbf_ft2(double v)
 {
-    //eNoPressUnit = 0, ePSF, eMillibars, ePascals, eInchesHg
-    Atmosphere->SetPressureSL(FGAtmosphere::ePressure::ePSF, v);
+    Atmosphere->SetPressure(v);
 }
 double FGJSBsim::get_atmosphere_pressure_lbf_ft2()
 {
@@ -1860,13 +1859,11 @@ void FGJSBsim::set_qbar(double v)
 }
 void FGJSBsim::set_bi2vel(double v)
 {
-    if (std::abs(Aerodynamics->GetBI2Vel() - v) > 0.01)
-        printf("bi2vel wrong %f %f\n", v, Aerodynamics->GetBI2Vel());
+    Aerodynamics->SetBI2Vel(v);
 }
 void FGJSBsim::set_ci2vel(double v)
 {
-    if (std::abs(Aerodynamics->GetCI2Vel() - v) > 0.01)
-        printf("ci2vel wrong %f %f\n", v, Aerodynamics->GetCI2Vel());
+    Aerodynamics->SetCI2Vel(v);
 }
 void FGJSBsim::set_vc_kts(double v)
 {
