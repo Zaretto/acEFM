@@ -578,12 +578,15 @@ namespace Symon
 
         private void btnCopy_Click(object sender, EventArgs e)
         {
+            string format = "<property value=\"{0}\">{1}</property>";
+            if ((Control.ModifierKeys & Keys.Control) == Keys.Control)
+                format = "<property caption=\"{2}\">{1}</property>";
             var vars = new List<string>();
             foreach (DataGridViewRow row in dataGridView1.SelectedRows)
             {
                 if (row.DataBoundItem is DataItem item)
                 {
-                    vars.Add(string.Format("<property value=\"{0}\">{1}</property>", item.GetDoubleValue(), item.Name));
+                    vars.Add(string.Format(format, item.GetDoubleValue(), item.Name, item.GetShortName()));
                 }
             }
             if (vars.Count > 0)
