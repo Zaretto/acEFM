@@ -582,11 +582,12 @@ namespace Symon
             if ((Control.ModifierKeys & Keys.Control) == Keys.Control)
                 format = "<property caption=\"{2}\">{1}</property>";
             var vars = new List<string>();
+            var usedNames = new Dictionary<string, bool>();
             foreach (DataGridViewRow row in dataGridView1.SelectedRows)
             {
                 if (row.DataBoundItem is DataItem item)
                 {
-                    vars.Add(string.Format(format, item.GetDoubleValue(), item.Name, item.GetShortName()));
+                    vars.Add(string.Format(format, item.GetDoubleValue(), item.Name, item.GetShortName(usedNames)));
                 }
             }
             if (vars.Count > 0)

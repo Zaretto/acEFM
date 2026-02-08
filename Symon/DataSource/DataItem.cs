@@ -200,4 +200,24 @@ public class DataItem : INotifyPropertyChanged
     {
         ds.UpdateValue(Name);
     }
+
+    internal object GetShortName(Dictionary<string, bool> usedNames)
+    {
+        if (string.IsNullOrWhiteSpace(Name))
+            return string.Empty;
+
+        var parts = Name.Split('/');
+        var caption = parts.Last();
+
+        int partIndex = parts.Length - 2;
+        while (usedNames.ContainsKey(caption) && partIndex >= 0)
+        {
+            caption = parts[partIndex] + " " + caption;
+            partIndex--;
+        }
+
+        usedNames[caption] = true;
+
+        return caption;
+    }
 }

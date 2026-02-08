@@ -23,6 +23,7 @@
 #include "models/FGGroundReactions.h"
 #include "models/FGPropulsion.h"
 #include "models/FGAccelerations.h"
+#include "models/FGInput.h"
 #include "models/atmosphere/FGWinds.h"
 #include "models/propulsion/FGEngine.h"
 #include "models/propulsion/FGPiston.h"
@@ -176,6 +177,7 @@ FGJSBsim::FGJSBsim(double dt)
     Aircraft = fdmex->GetAircraft();
     Propagate = fdmex->GetPropagate();
     Auxiliary = fdmex->GetAuxiliary();
+
     //Inertial = fdmex->GetInertial();
     Aerodynamics = fdmex->GetAerodynamics();
     GroundReactions = fdmex->GetGroundReactions();
@@ -281,6 +283,7 @@ FGJSBsim::FGJSBsim(double dt)
     auto debugNode = PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-level");
     if (debugNode != nullptr)
         fdmex->debug_lvl = debugNode->getIntValue();
+    initDebugNodes();
     result = fdmex->LoadModel(aircraft_path, engine_path, systems_path, aircraft_model, false);
     Wingspan = fgGetDouble("/fdm/jsbsim/metrics/bw-ft");
     Wingchord = fgGetDouble("/fdm/jsbsim/metrics/cbarw-ft"); 
@@ -343,7 +346,7 @@ FGJSBsim::FGJSBsim(double dt)
     fgSetDouble("/fdm/trim/aileron", FCS->GetDaCmd());
     fgSetDouble("/fdm/trim/rudder", FCS->GetDrCmd());
 
-
+    //OpenPropertyInspectionPort();
 
     //hook_root_struct = FGColumnVector3(
     //    fgGetDouble("/fdm/jsbsim/systems/hook/tailhook-offset-x-in", 196),
@@ -353,7 +356,71 @@ FGJSBsim::FGJSBsim(double dt)
     //last_hook_root[0] = 0; last_hook_root[1] = 0; last_hook_root[2] = 0;
 
     crashed = false;
+}
 
+/******************************************************************************/
+
+void FGJSBsim::initDebugNodes()
+{
+    auto get = [this](const char* path) {
+        return PropertyManager->GetNode(path, true);
+    };
+
+    dbg.flag            = get("/fdm/jsbsim/acefm/debug");
+    // timing
+    dbg.dt_dcs          = get("/fdm/jsbsim/acefm/debug/dt-dcs");
+    dbg.wallclock_us    = get("/fdm/jsbsim/acefm/debug/wallclock-us");
+    dbg.wall_dt_us      = get("/fdm/jsbsim/acefm/debug/wall-dt-us");
+    dbg.frame_count     = get("/fdm/jsbsim/acefm/debug/frame-count");
+    // forces
+    dbg.fbx             = get("/fdm/jsbsim/acefm/debug/forces-fbx-lbs");
+    dbg.fby             = get("/fdm/jsbsim/acefm/debug/forces-fby-lbs");
+    dbg.fbz             = get("/fdm/jsbsim/acefm/debug/forces-fbz-lbs");
+    // moments
+    dbg.ml              = get("/fdm/jsbsim/acefm/debug/moments-l-lbsft");
+    dbg.mm              = get("/fdm/jsbsim/acefm/debug/moments-m-lbsft");
+    dbg.mn              = get("/fdm/jsbsim/acefm/debug/moments-n-lbsft");
+    // engines
+    dbg.num_engines     = get("/fdm/jsbsim/acefm/debug/num-engines");
+    for (int e = 0; e < MAX_ENGINES; e++) {
+        std::string es = std::to_string(e);
+        dbg.throttle[e]     = get(("/fdm/jsbsim/acefm/debug/throttle-cmd-" + es).c_str());
+        dbg.thrust[e]       = get(("/fdm/jsbsim/acefm/debug/thrust-lbs-" + es).c_str());
+        dbg.n1[e]           = get(("/fdm/jsbsim/acefm/debug/n1-" + es).c_str());
+        dbg.src_throttle[e] = get(("/fdm/jsbsim/fcs/throttle-cmd-norm[" + es + "]").c_str());
+        dbg.src_thrust[e]   = get(("/fdm/jsbsim/propulsion/engine[" + es + "]/thrust-lbs").c_str());
+        dbg.src_n1[e]       = get(("/fdm/jsbsim/propulsion/engine[" + es + "]/n1").c_str());
+    }
+    // atmosphere
+    dbg.density_slugft3 = get("/fdm/jsbsim/acefm/debug/density-slugft3");
+    dbg.pressure_lbfft2 = get("/fdm/jsbsim/acefm/debug/pressure-lbfft2");
+    // aero state
+    dbg.alpha_deg       = get("/fdm/jsbsim/acefm/debug/alpha-deg");
+    dbg.beta_deg        = get("/fdm/jsbsim/acefm/debug/beta-deg");
+    dbg.alphadot        = get("/fdm/jsbsim/acefm/debug/alphadot-radsec");
+    dbg.betadot         = get("/fdm/jsbsim/acefm/debug/betadot-radsec");
+    dbg.qbar            = get("/fdm/jsbsim/acefm/debug/qbar-psf");
+    dbg.vt_fps          = get("/fdm/jsbsim/acefm/debug/vt-fps");
+    dbg.vt_ms           = get("/fdm/jsbsim/acefm/debug/vt-ms");
+    dbg.vc_kts          = get("/fdm/jsbsim/acefm/debug/vc-kts");
+    dbg.bi2vel          = get("/fdm/jsbsim/acefm/debug/bi2vel");
+    dbg.ci2vel          = get("/fdm/jsbsim/acefm/debug/ci2vel");
+    dbg.p               = get("/fdm/jsbsim/acefm/debug/p-radsec");
+    dbg.q               = get("/fdm/jsbsim/acefm/debug/q-radsec");
+    dbg.r               = get("/fdm/jsbsim/acefm/debug/r-radsec");
+    dbg.density_kgm3    = get("/fdm/jsbsim/acefm/debug/density-kgm3");
+    dbg.pitch           = get("/fdm/jsbsim/acefm/debug/pitch-rad");
+    dbg.roll            = get("/fdm/jsbsim/acefm/debug/roll-rad");
+    dbg.yaw             = get("/fdm/jsbsim/acefm/debug/yaw-rad");
+    // source nodes
+    dbg.src_fbx         = get("/fdm/jsbsim/forces/fbx-total-lbs");
+    dbg.src_fby         = get("/fdm/jsbsim/forces/fby-total-lbs");
+    dbg.src_fbz         = get("/fdm/jsbsim/forces/fbz-total-lbs");
+    dbg.src_ml          = get("/fdm/jsbsim/moments/l-total-lbsft");
+    dbg.src_mm          = get("/fdm/jsbsim/moments/m-total-lbsft");
+    dbg.src_mn          = get("/fdm/jsbsim/moments/n-total-lbsft");
+    dbg.src_adot        = get("/fdm/jsbsim/aero/alphadot-rad_sec");
+    dbg.src_bdot        = get("/fdm/jsbsim/aero/betadot-rad_sec");
 }
 
 /******************************************************************************/
@@ -1664,7 +1731,7 @@ void FGJSBsim::set_fcs_throttle_cmd_norm(int e, double v)
         -1000000,
     };
     if (fabs(v - ltv[e]) > 0.001) {
-        //printf("Throttle %d %.2f\n",e, v);
+        printf("Throttle %d %.2f\n",e, v);
         ltv[e] = v;
         if (e == 0)
             fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[0]", v);
@@ -1785,8 +1852,8 @@ void FGJSBsim::set_current_state_body_axis(
     set_aero_beta_deg(beta_rads * RADIANS_TO_DEGREES);
     if (init_body) {
         double factor = 1.0 / dT;
-        set_aero_alphadot_rad_sec(((last_alpha_rads - alpha_rads)) * factor);
-        set_aero_betadot_rad_sec(((last_beta_rads - beta_rads)) * factor);
+        set_aero_alphadot_rad_sec((alpha_rads - last_alpha_rads) * factor);
+        set_aero_betadot_rad_sec((beta_rads - last_beta_rads) * factor);
     }
     last_alpha_rads = alpha_rads;
     last_beta_rads = beta_rads;
@@ -1807,9 +1874,10 @@ void FGJSBsim::set_current_state_body_axis(
     //    Propagate->GetPQR(FGJSBBase::eQ),
     //    Propagate->GetPQR(FGJSBBase::eR));
 
-    set_velocities_u_aero_fps(vx * METER_TO_FEET_FACTOR);
-    set_velocities_v_aero_fps(vz * METER_TO_FEET_FACTOR);
-    set_velocities_w_aero_fps(-vy * METER_TO_FEET_FACTOR);
+    set_velocities_u_aero_fps((vx - wind_vx) * METER_TO_FEET_FACTOR);
+    set_velocities_v_aero_fps((vz - wind_vz) * METER_TO_FEET_FACTOR);
+    // DCS Y+ is up, JSBSim w is Z+ down: negate (vy - wind_vy)
+    set_velocities_w_aero_fps(-(vy - wind_vy) * METER_TO_FEET_FACTOR);
 
     /*
         attitude/phi-deg         attitude/phi-rad         attitude/roll-rad        
@@ -1817,16 +1885,16 @@ void FGJSBsim::set_current_state_body_axis(
         attitude/psi-deg         attitude/psi-rad
     */
 
-    // include the effects of wind at this point on the velocities to get the overall forward velocity through the air mass.
-
     set_velocities_vt_fps(Vt_fps);
     UpdateWindMatrices();
     set_roll_pitch_yaw(roll, pitch, yaw);
     //    model->fgSetDouble("/fdm/jsbsim/attitude/phi-deg", 0);
     fgSetDouble("/fdm/jsbsim/attitude/phi-rad", roll);
+
     //    model->fgSetDouble("/fdm/jsbsim/attitude/pitch-rad", pitch);
     //    model->fgSetDouble("/fdm/jsbsim/attitude/psi-deg", 0);
     fgSetDouble("/fdm/jsbsim/attitude/psi-rad", yaw);
+
     //    model->fgSetDouble("/fdm/jsbsim/attitude/roll-rad", roll);
     fgSetDouble("/fdm/jsbsim/attitude/theta-deg", pitch * RADIANS_TO_DEGREES);
     set_vc_kts(VcKts);
@@ -1845,13 +1913,34 @@ void FGJSBsim::set_current_state_body_axis(
     //MassBalance->StructuralToBody(Aircraft->GetXYZrp());
     double twovel = Vt_fps * 2;
     double qbar_psf = 0.5 * (ro_kgm3 * KGM3_TO_SLUGS_FT3) * Vt_fps * Vt_fps;
-    double bi2vel = Wingspan / twovel;
-    double ci2vel = Wingchord / twovel;
+    double bi2vel = (twovel > JSB_NEARLY_ZERO) ? Wingspan / twovel : 0;
+    double ci2vel = (twovel > JSB_NEARLY_ZERO) ? Wingchord / twovel : 0;
     set_qbar(qbar_psf);
     set_bi2vel(bi2vel);
     set_ci2vel(ci2vel);
-    
+
     update();
+
+    // --- debug instrumentation: aero state ---
+    if (dbg.flag->getBoolValue()) {
+        dbg.alpha_deg->setDoubleValue(alpha_rads * RADIANS_TO_DEGREES);
+        dbg.beta_deg->setDoubleValue(beta_rads * RADIANS_TO_DEGREES);
+        dbg.alphadot->setDoubleValue(dbg.src_adot->getDoubleValue());
+        dbg.betadot->setDoubleValue(dbg.src_bdot->getDoubleValue());
+        dbg.qbar->setDoubleValue(qbar_psf);
+        dbg.vt_fps->setDoubleValue(Vt_fps);
+        dbg.vt_ms->setDoubleValue(Vt_ms);
+        dbg.vc_kts->setDoubleValue(VcKts);
+        dbg.bi2vel->setDoubleValue(bi2vel);
+        dbg.ci2vel->setDoubleValue(ci2vel);
+        dbg.p->setDoubleValue(omegax);
+        dbg.q->setDoubleValue(omegaz);
+        dbg.r->setDoubleValue(-omegay);
+        dbg.density_kgm3->setDoubleValue(ro_kgm3);
+        dbg.pitch->setDoubleValue(pitch);
+        dbg.roll->setDoubleValue(roll);
+        dbg.yaw->setDoubleValue(yaw);
+    }
 }
 void FGJSBsim::set_qbar(double v)
 {
@@ -1873,4 +1962,18 @@ void FGJSBsim::UpdateWindMatrices()
 {
     Auxiliary->UpdateWindMatrices();
 //    Auxiliary->Run(false);
+}
+void FGJSBsim::OpenPropertyInspectionPort(int port)
+{
+    auto input = fdmex->GetInput();
+
+ // Create minimal input configuration
+    JSBSim::Element* inputElement = new JSBSim::Element("input");
+    inputElement->AddAttribute("port", std::to_string(port));
+
+    // Attempt to load - JSBSim will handle if already configured
+    input->Load(inputElement);
+    input->Enable();
+
+    delete inputElement;
 }

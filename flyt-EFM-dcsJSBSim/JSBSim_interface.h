@@ -30,7 +30,7 @@ FORWARD DECLARATIONS
 #define DEGREES_TO_RADIANS 0.0174532925
 #define RADIANS_TO_DEGREES 57.295779505
 #define JSB_NEARLY_ZERO 0.0000001 // avoid division by zero
-#define LBF_TO_NM 14.5939
+#define LBSFT_TO_NM 1.3558179483314
 #define LBS_TO_N 4.4483985765124555160142348754448
 #define KGM3_TO_SLUGS_FT3 0.0019403203
 #define INCHES_TO_METERS 0.0254
@@ -179,6 +179,7 @@ public:
 
     bool ToggleDataLogging(bool state);
     bool ToggleDataLogging(void);
+    void OpenPropertyInspectionPort(int port = 1137);
 
     double fgGetDouble(const char * name, double defaultValue=0.0)
     {
@@ -383,6 +384,63 @@ public:
     //double hook_length;
 
     bool crashed;
+
+    // --- debug instrumentation property nodes ---
+    struct DebugNodes {
+        SGPropertyNode* flag;
+        // timing (set by DCS_interface)
+        SGPropertyNode* dt_dcs;
+        SGPropertyNode* wallclock_us;
+        SGPropertyNode* wall_dt_us;
+        SGPropertyNode* frame_count;
+        // forces (set by DCS_interface)
+        SGPropertyNode* fbx;
+        SGPropertyNode* fby;
+        SGPropertyNode* fbz;
+        // moments (set by DCS_interface)
+        SGPropertyNode* ml;
+        SGPropertyNode* mm;
+        SGPropertyNode* mn;
+        // engines (set by DCS_interface)
+        SGPropertyNode* num_engines;
+        SGPropertyNode* throttle[MAX_ENGINES];
+        SGPropertyNode* thrust[MAX_ENGINES];
+        SGPropertyNode* n1[MAX_ENGINES];
+        // atmosphere (set by DCS_interface)
+        SGPropertyNode* density_slugft3;
+        SGPropertyNode* pressure_lbfft2;
+        // aero state (set by JSBSim_interface)
+        SGPropertyNode* alpha_deg;
+        SGPropertyNode* beta_deg;
+        SGPropertyNode* alphadot;
+        SGPropertyNode* betadot;
+        SGPropertyNode* qbar;
+        SGPropertyNode* vt_fps;
+        SGPropertyNode* vt_ms;
+        SGPropertyNode* vc_kts;
+        SGPropertyNode* bi2vel;
+        SGPropertyNode* ci2vel;
+        SGPropertyNode* p;
+        SGPropertyNode* q;
+        SGPropertyNode* r;
+        SGPropertyNode* density_kgm3;
+        SGPropertyNode* pitch;
+        SGPropertyNode* roll;
+        SGPropertyNode* yaw;
+        // source nodes for reading JSBSim values
+        SGPropertyNode* src_fbx;
+        SGPropertyNode* src_fby;
+        SGPropertyNode* src_fbz;
+        SGPropertyNode* src_ml;
+        SGPropertyNode* src_mm;
+        SGPropertyNode* src_mn;
+        SGPropertyNode* src_throttle[MAX_ENGINES];
+        SGPropertyNode* src_thrust[MAX_ENGINES];
+        SGPropertyNode* src_n1[MAX_ENGINES];
+        SGPropertyNode* src_adot;
+        SGPropertyNode* src_bdot;
+    } dbg;
+    void initDebugNodes();
 
     //SGPropertyNode_ptr _ai_wake_enabled;
     //SGPropertyNode_ptr _fmag{ nullptr }, _mmag{ nullptr };

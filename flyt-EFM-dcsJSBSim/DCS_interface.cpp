@@ -4,6 +4,8 @@
 #include "DCS_interface.h"
 #include "fm_math.h"
 #include "math/FGQuaternion.h"
+#include "models/FGPropulsion.h"
+#include <string>
 Vec3d center_of_mass;                    // m
 Vec3d common_moment;                     // kg/m^2
 Vec3d common_force;                      // N
@@ -31,6 +33,10 @@ int local_debug = 1;
 double dT;
 double ro_kgm3 = 1.225;// 1013hPa
 
+static LARGE_INTEGER qpc_freq;
+static LARGE_INTEGER qpc_last;
+static bool qpc_init = false;
+static long long debug_frame_counter = 0;
 
 int frame_count = 0;
 int nullf() { return 0; }
@@ -41,7 +47,7 @@ static std::map<std::string, double> conversion_map = {
 {"DEGREES_TO_RADIANS", 0.0174532925},
 {"RADIANS_TO_DEGREES", 57.295779505},
 {"ZERO", 0.0000001}, // avoid division by zero
-{"LBF_TO_NM", 1.3558179483314},
+{"LBSFT_TO_NM", 1.3558179483314},
 {"LBS_TO_N", 4.4483985765124555160142348754448},
 {"KGM3_TO_SLUGS_FT3", 0.0019403203},
 {"INCHES_TO_METERS", 0.0254},
@@ -128,7 +134,6 @@ void DCS_interface::initialize(FGJSBsim * _model)
         SG_LOG(SG_FLIGHT, SG_ALERT, "Missing cockpit definition in /sim/cockpit");
    
 }
-
 void DCS_interface::simulate(double dt)
 {
     dT = dt;
@@ -146,12 +151,91 @@ void DCS_interface::simulate(double dt)
     {
         cockpit.Update(model);
     }
+
+    // --- debug instrumentation ---
+    if (local_debug) {
+        debug_frame_counter++;
+
+        // high-resolution wall clock timing
+        LARGE_INTEGER qpc_now;
+        QueryPerformanceCounter(&qpc_now);
+        if (!qpc_init) {
+            QueryPerformanceFrequency(&qpc_freq);
+            qpc_last = qpc_now;
+            qpc_init = true;
+        }
+        double wall_dt_us = (double)(qpc_now.QuadPart - qpc_last.QuadPart) * 1000000.0 / (double)qpc_freq.QuadPart;
+        double wallclock_us = (double)qpc_now.QuadPart * 1000000.0 / (double)qpc_freq.QuadPart;
+        qpc_last = qpc_now;
+
+        // timing
+        model->dbg.dt_dcs->setDoubleValue(dt);
+        model->dbg.wallclock_us->setDoubleValue(wallclock_us);
+        model->dbg.wall_dt_us->setDoubleValue(wall_dt_us);
+        model->dbg.frame_count->setDoubleValue((double)debug_frame_counter);
+
+        // forces (raw JSBSim lbs)
+        model->dbg.fbx->setDoubleValue(model->dbg.src_fbx->getDoubleValue());
+        model->dbg.fby->setDoubleValue(model->dbg.src_fby->getDoubleValue());
+        model->dbg.fbz->setDoubleValue(model->dbg.src_fbz->getDoubleValue());
+
+        // moments (raw JSBSim lbsft)
+        model->dbg.ml->setDoubleValue(model->dbg.src_ml->getDoubleValue());
+        model->dbg.mm->setDoubleValue(model->dbg.src_mm->getDoubleValue());
+        model->dbg.mn->setDoubleValue(model->dbg.src_mn->getDoubleValue());
+
+        // engine state - all engines
+        unsigned int nEngines = model->Propulsion->GetNumEngines();
+        model->dbg.num_engines->setDoubleValue((double)nEngines);
+        for (unsigned int e = 0; e < nEngines && e < MAX_ENGINES; e++) {
+            model->dbg.throttle[e]->setDoubleValue(model->dbg.src_throttle[e]->getDoubleValue());
+            model->dbg.thrust[e]->setDoubleValue(model->dbg.src_thrust[e]->getDoubleValue());
+            model->dbg.n1[e]->setDoubleValue(model->dbg.src_n1[e]->getDoubleValue());
+        }
+
+        // atmosphere
+        model->dbg.density_slugft3->setDoubleValue(model->get_atmosphere_rho_slugs_ft3());
+        model->dbg.pressure_lbfft2->setDoubleValue(model->get_atmosphere_pressure_lbf_ft2());
+    }
 }
 
 double ed_fm_get_param(unsigned index)
 {
     FGJSBsim* model = get_model();
-    if (index <= ED_FM_END_ENGINE_BLOCK) {
+    if (index < ED_FM_END_ENGINE_BLOCK) {
+        // engine block: each DCS engine occupies a block of 100 indices
+        // DCS engine 0 = APU, DCS engine N (N>=1) = JSBSim engine[N-1]
+        static const unsigned ENGINE_BLOCK_SIZE = ED_FM_ENGINE_1_RPM - ED_FM_ENGINE_0_RPM;
+        unsigned dcs_engine  = index / ENGINE_BLOCK_SIZE;
+        unsigned param_offset = index % ENGINE_BLOCK_SIZE;
+
+        if (dcs_engine == 0)
+            return 0; // APU - not modelled
+
+        int jsb_engine = (int)dcs_engine - 1;
+        if (jsb_engine >= (int)model->Propulsion->GetNumEngines())
+            return 0;
+
+        // build property path for this JSBSim engine
+        std::string eng_prefix = "/fdm/jsbsim/propulsion/engine[" + std::to_string(jsb_engine) + "]/";
+
+        switch (param_offset) {
+        case ED_FM_ENGINE_0_RPM:            // offset 0: RPM
+            return model->fgGetDouble((eng_prefix + "n1").c_str()) * 120;
+        case ED_FM_ENGINE_0_RELATED_RPM:    // offset 1: related RPM (N2 as 0-1)
+            return model->fgGetDouble((eng_prefix + "n2").c_str());
+        case ED_FM_ENGINE_0_THRUST:         // offset 4: thrust in N
+            return model->fgGetDouble((eng_prefix + "thrust-lbs").c_str()) * LBS_TO_N;
+        case ED_FM_ENGINE_0_RELATED_THRUST: // offset 5
+            return 0;
+        case ED_FM_ENGINE_0_FUEL_FLOW:      // offset 14
+            return model->fgGetDouble((eng_prefix + "fuel-flow-rate-pps").c_str());
+        default:
+            return 0;
+        }
+    } else if (index >= ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT &&
+               index < ED_FM_OXYGEN_SUPPLY) {
+        // gear/suspension block
         switch (index) {
         case ED_FM_SUSPENSION_0_GEAR_POST_STATE:
         case ED_FM_SUSPENSION_0_DOWN_LOCK:
@@ -165,19 +249,18 @@ double ed_fm_get_param(unsigned index)
         case ED_FM_SUSPENSION_2_DOWN_LOCK:
         case ED_FM_SUSPENSION_2_UP_LOCK:
             return model->fgGetDouble("/fdm/jsbsim/gear/unit[2]/pos-norm");
+        }
 
-        case ED_FM_ENGINE_0_RPM:
-        case ED_FM_ENGINE_0_RELATED_RPM:
-        case ED_FM_ENGINE_0_THRUST:
-        case ED_FM_ENGINE_0_RELATED_THRUST:
-            return 0; // APU
-        case ED_FM_ENGINE_1_RPM:
-            return model->fgGetDouble("/fdm/jsbsim/propulsion/engine[0]/n1") * 120;
-        case ED_FM_ENGINE_1_RELATED_RPM:
-            return model->fgGetDouble("/fdm/jsbsim/propulsion/engine[0]/n2");
-        case ED_FM_ENGINE_1_THRUST:
-            return model->fgGetDouble("/fdm/jsbsim/propulsion/engine[0]/thrust-lbs") * LBS_TO_N;
-        case ED_FM_ENGINE_1_RELATED_THRUST:
+        static const int block_size =
+            ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT -
+            ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
+        switch (index) {
+        case 0 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
+            //return A37::Systems::Gear::noseGearValue;
+        case 1 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
+            //return A37::Systems::Gear::leftGearValue;
+        case 2 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
+            //return A37::Systems::Gear::rightGearValue;
             return 0;
         }
     } else if (index >= ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT &&
@@ -301,16 +384,39 @@ void ed_fm_add_local_moment(double &x, double &y, double &z)
     // y + up
     // z + right
 
-    x = model->fgGetDouble("/fdm/jsbsim/moments/l-total-lbsft") / LBF_TO_NM ;
-    y = -model->fgGetDouble("/fdm/jsbsim/moments/n-total-lbsft") / LBF_TO_NM;
-    z = model->fgGetDouble("/fdm/jsbsim/moments/m-total-lbsft") / LBF_TO_NM;
+    x = model->fgGetDouble("/fdm/jsbsim/moments/l-total-lbsft") * LBSFT_TO_NM;
+    y = -model->fgGetDouble("/fdm/jsbsim/moments/n-total-lbsft") * LBSFT_TO_NM;
+    z = model->fgGetDouble("/fdm/jsbsim/moments/m-total-lbsft") * LBSFT_TO_NM;
 }
 
+
+//{
+//    FGJSBsim* model = get_model();
+//
+//    // Convert units
+//    double density_slugs_ft3 = ro_kgm3 * KGM3_TO_SLUGS_FT3;
+//    double pressure_psf = p_Pa * PA_TO_LBF_FT2;
+//    double soundspeed_fps = a * METERS_TO_FEET;
+//    double altitude_ft = h * METERS_TO_FEET;
+//    double temp_rankine = t * 1.8; // Kelvin to Rankine
+//
+//    // Set directly via property manager
+//    model->PropertyManager->GetNode()->setDoubleValue("/atmosphere/rho-slugs_ft3", density_slugs_ft3);
+//    model->PropertyManager->GetNode()->setDoubleValue("/atmosphere/P-psf", pressure_psf);
+//    model->PropertyManager->GetNode()->setDoubleValue("/atmosphere/T-R", temp_rankine);
+//    model->PropertyManager->GetNode()->setDoubleValue("/atmosphere/a-fps", soundspeed_fps);
+//
+//    // Also set altitude input for JSBSim
+//    model->Atmosphere->in.altitudeASL = altitude_ft;
+//
+//    // IMPORTANT: Don't call Atmosphere->Run()!
+//    // We're bypassing the calculation and injecting values directly
+//}
 void ed_fm_set_atmosphere(double h,	//altitude above sea level
     double t,	//Ambient temperature (kelvin)
     double a,	//speed of sound
     double _ro_kgm3,	// (kg/m^3)
-    double _nm2,	// atmosphere pressure (Pa == N/m^2)
+    double p_Pa,	// atmosphere pressure (Pa == N/m^2)
     double wind_vx_ms,	//components of velocity vector, including turbulence in world coordinate system
     double wind_vy_ms,	//components of velocity vector, including turbulence in world coordinate system
     double wind_vz_ms	//components of velocity vector, including turbulence in world coordinate system
@@ -321,6 +427,12 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
     {
 #endif
         FGJSBsim* model = get_model();
+        // Convert units
+        double density_slugs_ft3 = ro_kgm3 * KGM3_TO_SLUGS_FT3;
+        double pressure_psf = p_Pa * PA_TO_LBF_FT2;
+        double soundspeed_fps = a * METERS_TO_FEET;
+        double altitude_ft = h * METERS_TO_FEET;
+        double temp_rankine = t * 1.8; // Kelvin to Rankine
 
         // Sea level 15degres:
         // 1.225 kg / m3
@@ -329,7 +441,7 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
         // 0.0765 lb / (cu ft)
         //printf("ed_fm_set_atmos %f, %f, %f, %f\n", h, t, a, ro);
         model->set_atmosphere_rho_slugs_ft3(ro_kgm3 * KGM3_TO_SLUGS_FT3);
-        model->set_atmosphere_pressure_lbf_ft2(_nm2 * PA_TO_LBF_FT2);
+        model->set_atmosphere_pressure_lbf_ft2(p_Pa * PA_TO_LBF_FT2);
 
         model->set_sound_speed(a * METERS_TO_FEET);
         model->set_altitude(h * METERS_TO_FEET);
@@ -515,12 +627,12 @@ you should distribute it inside at different fuel tanks
 */
 void ed_fm_set_internal_fuel(double fuel)
 {
-    printf("ed_fm_set_internal_fuel %5.1f\n", fuel);
+    //printf("ed_fm_set_internal_fuel %5.1f\n", fuel);
 }
 
 double ed_fm_get_internal_fuel()
 {
-    printf("ed_fm_get_internal_fuel\n");
+    //printf("ed_fm_get_internal_fuel\n");
     return 0;
 }
 
@@ -553,8 +665,8 @@ void ed_fm_suspension_feedback(int idx, const ed_fm_suspension_info * info)
 {
     if (true)
     {
-        std::cout << "suspension info " << idx << ": " << info->struct_compression << "\t" << info->integrity_factor << "\t" <<
-        info->acting_force[0] << ", " << info->acting_force[1] << ", " << info->acting_force[2] << "\n";
+//        std::cout << "suspension info " << idx << ": " << info->struct_compression << "\t" << info->integrity_factor << "\t" <<
+//        info->acting_force[0] << ", " << info->acting_force[1] << ", " << info->acting_force[2] << "\n";
     }
 }
 
@@ -579,10 +691,17 @@ void ed_fm_set_command(int command, float value)
     if (command == 2004) { //iCommandPlaneThrustCommon
         // +1 off
         // -1 full
-        //value = (1.0 - value)/2;
+        value = (-value + 1.0) / 2.0;
+        for (unsigned int e = 0; e < model->Propulsion->GetNumEngines(); e++)
+            model->set_fcs_throttle_cmd_norm(e, value);
+    }
+    else if (command == 2005) { //iCommandPlaneThrustLeft
         value = (-value + 1.0) / 2.0;
         model->set_fcs_throttle_cmd_norm(0, value);
-        //        model->get_controls()->set_throttle(1, value);
+    }
+    else if (command == 2006) { //iCommandPlaneThrustRight
+        value = (-value + 1.0) / 2.0;
+        model->set_fcs_throttle_cmd_norm(1, value);
     }
     else if (command == 2001) { //iCommandPlanePitch
         double ep = -value;// 0.5 * (-value + 1.0);
