@@ -641,12 +641,12 @@ set external fuel volume for each payload station , called for weapon init and o
 */
 void ed_fm_set_external_fuel(int station, double fuel, double x, double y, double z)
 {
-    printf("ed_fm_set_internal_fuel %d %5.1f (%5.1f,%5.1f,%5.1f)\n", station, fuel, x,y,z);
+    //printf("ed_fm_set_internal_fuel %d %5.1f (%5.1f,%5.1f,%5.1f)\n", station, fuel, x,y,z);
 }
 
 double ed_fm_get_external_fuel()
 {
-    printf("ed_fm_get_external_fuel\n");
+    //printf("ed_fm_get_external_fuel\n");
     return 0;
 }
 
@@ -677,7 +677,7 @@ void ed_fm_set_surface(double h,	//surface height under the center of aircraft
     double normal_z	//components of normal vector to surface
 )
 {
-    printf("ed_fm_set_surface %5.1f %5.1f %d %5.1f,%5.1f,%5.1f\n", h, h_obj, surface_type, normal_x, normal_y, normal_z);
+    //printf("ed_fm_set_surface %5.1f %5.1f %d %5.1f,%5.1f,%5.1f\n", h, h_obj, surface_type, normal_x, normal_y, normal_z);
     //model->set_agl_m(h);
     
 }
