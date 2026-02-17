@@ -1668,6 +1668,16 @@ void FGJSBsim::set_velocities_vt_fps(double v)
 }
 void FGJSBsim::update()
 {
+    // Populate Auxiliary inputs from current Atmosphere state before running.
+    // In DCS mode, FGFDMExec skips LoadInputs(eAuxiliary) so these would
+    // remain at initialisation defaults (sea-level). Without this, Auxiliary::Run()
+    // recalculates qbar from stale density, overwriting the correct DCS value.
+    Auxiliary->in.Pressure     = Atmosphere->GetPressure();
+    Auxiliary->in.Density      = Atmosphere->GetDensity();
+    Auxiliary->in.Temperature  = Atmosphere->GetTemperature();
+    Auxiliary->in.SoundSpeed   = Atmosphere->GetSoundSpeed();
+    Auxiliary->in.KinematicViscosity = Atmosphere->GetKinematicViscosity();
+
     Auxiliary->Run(false);
 }
 
