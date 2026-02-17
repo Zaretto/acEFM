@@ -394,6 +394,13 @@ void FGJSBsim::initDebugNodes()
     // atmosphere
     dbg.density_slugft3 = get("/fdm/jsbsim/acefm/debug/density-slugft3");
     dbg.pressure_lbfft2 = get("/fdm/jsbsim/acefm/debug/pressure-lbfft2");
+    dbg.altitude_ft     = get("/fdm/jsbsim/acefm/debug/altitude-ft");
+    dbg.temperature_R   = get("/fdm/jsbsim/acefm/debug/temperature-R");
+    dbg.speed_of_sound_fps = get("/fdm/jsbsim/acefm/debug/speed-of-sound-fps");
+    // DCS control inputs
+    dbg.elevator_cmd    = get("/fdm/jsbsim/acefm/debug/elevator-cmd-norm");
+    dbg.aileron_cmd     = get("/fdm/jsbsim/acefm/debug/aileron-cmd-norm");
+    dbg.rudder_cmd      = get("/fdm/jsbsim/acefm/debug/rudder-cmd-norm");
     // aero state
     dbg.alpha_deg       = get("/fdm/jsbsim/acefm/debug/alpha-deg");
     dbg.beta_deg        = get("/fdm/jsbsim/acefm/debug/beta-deg");

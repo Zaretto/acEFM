@@ -32,6 +32,10 @@ char i = 0;
 int local_debug = 1;
 double dT;
 double ro_kgm3 = 1.225;// 1013hPa
+// cached atmosphere values for debug logging
+static double dbg_altitude_ft = 0;
+static double dbg_temperature_R = 0;
+static double dbg_speed_of_sound_fps = 0;
 
 static LARGE_INTEGER qpc_freq;
 static LARGE_INTEGER qpc_last;
@@ -196,6 +200,11 @@ void DCS_interface::simulate(double dt)
         // atmosphere
         model->dbg.density_slugft3->setDoubleValue(model->get_atmosphere_rho_slugs_ft3());
         model->dbg.pressure_lbfft2->setDoubleValue(model->get_atmosphere_pressure_lbf_ft2());
+        model->dbg.altitude_ft->setDoubleValue(dbg_altitude_ft);
+        model->dbg.temperature_R->setDoubleValue(dbg_temperature_R);
+        model->dbg.speed_of_sound_fps->setDoubleValue(dbg_speed_of_sound_fps);
+        // note: aero state (alpha, beta, qbar, vt, p/q/r, pitch/roll/yaw)
+        // is populated by JSBSim_interface::set_current_state_body_axis()
     }
 }
 
@@ -445,6 +454,11 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
 
         model->set_sound_speed(a * METERS_TO_FEET);
         model->set_altitude(h * METERS_TO_FEET);
+
+        // cache for debug logging
+        dbg_altitude_ft = altitude_ft;
+        dbg_temperature_R = temp_rankine;
+        dbg_speed_of_sound_fps = soundspeed_fps;
         static double last_h;
         static bool init = false;
         double hpDiff=0;
@@ -706,13 +720,15 @@ void ed_fm_set_command(int command, float value)
     else if (command == 2001) { //iCommandPlanePitch
         double ep = -value;// 0.5 * (-value + 1.0);
         model->set_fcs_elevator_cmd_norm(ep);
-        //        model->get_controls()->set_elevator(0.5 * (-value + 1.0));
+        model->dbg.elevator_cmd->setDoubleValue(ep);
     }
     else if (command == 2002) { //iCommandPlaneRoll{
         model->set_fcs_aileron_cmd_norm(value);
+        model->dbg.aileron_cmd->setDoubleValue(value);
     }
-    else if (command == 2003) { //iCommandPlaneRoll{
+    else if (command == 2003) { //iCommandPlaneYaw{
         model->set_fcs_rudder_cmd_norm(value);
+        model->dbg.rudder_cmd->setDoubleValue(value);
     }
     //else if (command == 2035) {
     //    printf("Gear %d -> %.2f\n", command, value);
