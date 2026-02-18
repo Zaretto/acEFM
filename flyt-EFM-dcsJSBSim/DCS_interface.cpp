@@ -443,17 +443,18 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
         double altitude_ft = h * METERS_TO_FEET;
         double temp_rankine = t * 1.8; // Kelvin to Rankine
 
-        // Sea level 15degres:
-        // 1.225 kg / m3
-        // 1.225 x10-3 g/cm3,
-        // 0.0023769 slug / (cu ft), 
-        // 0.0765 lb / (cu ft)
-        //printf("ed_fm_set_atmos %f, %f, %f, %f\n", h, t, a, ro);
-        model->set_atmosphere_rho_slugs_ft3(ro_kgm3 * KGM3_TO_SLUGS_FT3);
-        model->set_atmosphere_pressure_lbf_ft2(p_Pa * PA_TO_LBF_FT2);
+        // Use JSBSim's built-in atmosphere override properties.
+        // When these exist, FGAtmosphere::Calculate() reads them instead of
+        // computing from altitude via the ISA model. Sound speed is derived
+        // from the overridden temperature by JSBSim internally.
+        // NOTE: Must use /fdm/jsbsim/ prefix because FGAtmosphere's PropertyManager
+        // is rooted at the fdm/jsbsim subtree, not the absolute root.
+        model->fgSetDouble("/fdm/jsbsim/atmosphere/override/density", density_slugs_ft3);
+        model->fgSetDouble("/fdm/jsbsim/atmosphere/override/pressure", pressure_psf);
+        model->fgSetDouble("/fdm/jsbsim/atmosphere/override/temperature", temp_rankine);
 
-        model->set_sound_speed(a * METERS_TO_FEET);
-        model->set_altitude(h * METERS_TO_FEET);
+        // Set altitude on Propagate for LoadInputs(eAtmosphere) and ground reactions
+        model->set_altitude(altitude_ft);
 
         // cache for debug logging
         dbg_altitude_ft = altitude_ft;

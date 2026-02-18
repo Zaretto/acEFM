@@ -1,9 +1,10 @@
 #include <stdafx.h>
 #include <cstdlib>    //    size_t
-#include <stdlib.h>  
+#include <stdlib.h>
 #include <string>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 
 #include "JSBSim_interface.h"
 #include "FGFDMExec.h"
@@ -484,12 +485,16 @@ fgSetDouble("/position/altitude-ft",10000);
 //Propagate->SetAltitudeASL(altitude->getDoubleValue());
     fdmex->RunIC();     //loop JSBSim once w/o integrating
     if (fgGetBool("/sim/presets/running")) {
-        Propulsion->InitRunning(-1);
-        //for (unsigned int i = 0; i < Propulsion->GetNumEngines(); i++) {
-        //    FGPiston* eng = (FGPiston*)Propulsion->GetEngine(i);
-        //    get_controls()->set_magnetos(i, eng->GetMagnetos());
-        //    get_controls()->set_mixture(i, FCS->GetMixtureCmd(i));
-        //}
+        // Initialize engines at idle, not full power.
+        // InitRunning() forces throttle=1.0 and converges at max thrust,
+        // leaving N1=100%. Instead we set throttle to idle first, then let
+        // InitRunning set the running state, and GetSteadyState converges
+        // at idle thrust.
+        for (unsigned int i = 0; i < Propulsion->GetNumEngines(); i++) {
+            FCS->SetThrottleCmd(i, 0.0);
+            FCS->SetThrottlePos(i, 0.0);
+            Propulsion->GetEngine(i)->InitRunning();
+        }
     }
 
     //if (needTrim) {
@@ -578,6 +583,26 @@ void FGJSBsim::unbind()
 
 /******************************************************************************/
 
+// Models to run in DCS mode: everything except Propagate, Inertial, Winds, BuoyantForces.
+// Atmosphere runs but uses atmosphere/override/* properties for DCS-provided values.
+// Auxiliary runs normally via LoadInputs, computing qbar/Mach/Vcas/etc from correct inputs.
+static const std::vector<int> dcsModels = {
+    JSBSim::FGFDMExec::eAtmosphere,
+    JSBSim::FGFDMExec::eInput,
+    JSBSim::FGFDMExec::eSystems,
+    JSBSim::FGFDMExec::eMassBalance,
+    JSBSim::FGFDMExec::eAuxiliary,
+    JSBSim::FGFDMExec::ePropulsion,
+    JSBSim::FGFDMExec::eAerodynamics,
+    JSBSim::FGFDMExec::eGroundReactions,
+    JSBSim::FGFDMExec::eExternalReactions,
+    JSBSim::FGFDMExec::eAircraft,
+    JSBSim::FGFDMExec::eAccelerations,
+    JSBSim::FGFDMExec::eOutput,
+};
+
+extern "C" { extern int DCS__active; }
+
 // Run an iteration of the EOM (equations of motion)
 void FGJSBsim::update(double dt)
 {
@@ -586,35 +611,31 @@ void FGJSBsim::update(double dt)
             fgSetBool("/sim/crashed", true);
         return;
     }
-    //if (is_suspended())
-    //    return;
     fdmex->Setdt(dt);
 
-    int loop_count = 1; // may need to adjust to maintain higher frame rate
-    //FGLocation cart = Auxiliary->GetLocationVRP();
+    bool success;
+    if (DCS__active) {
+        // DCS mode: run selected models only.
+        // Propagate is skipped (DCS owns position/velocity integration).
+        // Atmosphere runs with override properties providing DCS values.
+        // Auxiliary runs via LoadInputs, correctly computing all derived quantities.
+        success = fdmex->Run(dcsModels);
 
-    //update_ground_cache(cart, dt);
-
-    //copy_to_JSBsim();
-
-    //trimmed->setBoolValue(false);
-
-    for (int i = 0; i < loop_count; i++) {
-        if (!fdmex->Run()) {
-            // The property fdm/jsbsim/simulation/terminate has been set to true
-            // by the user. The sim is considered crashed.
-            //printf("Crashed \n");
-            crashed = true;
-            break;
-        }
-//        fdmex->GetPropagate()->DumpState();
-        update_external_forces(fdmex->GetSimTime() + i * fdmex->GetDeltaT());
+        // Apply alpha/beta rates AFTER Run, because Auxiliary::Run() zeros
+        // adot/bdot and recomputes from in.vUVWdot (stale in DCS mode).
+        Auxiliary->Setadot(pending_adot);
+        Auxiliary->Setbdot(pending_bdot);
+    } else {
+        // Standalone mode (TestPlane): run all models normally
+        success = fdmex->Run();
     }
-  
 
-    //// translate JSBsim back to FG structure so that the
-    //// autopilot (and the rest of the sim can use the updated values
-    //copy_from_JSBsim();
+    if (!success) {
+        crashed = true;
+        return;
+    }
+
+    update_external_forces(fdmex->GetSimTime());
 }
 
 /******************************************************************************/
@@ -1646,60 +1667,11 @@ void FGJSBsim::set_roll_pitch_yaw(double roll_rad, double pitch_rad, double yaw_
     Propagate->SetVState(vstate);
 }
 
-void FGJSBsim::set_velocities_u_aero_fps(double v)
-{
-    Auxiliary->in.vUVW(1) = v;
-}
-
-void FGJSBsim::set_velocities_v_aero_fps(double v)
-{
-    Auxiliary->in.vUVW(2) = v;
-}
-
-void FGJSBsim::set_velocities_w_aero_fps(double v)
-{
-    Auxiliary->in.vUVW(3) = v;
-}
-
-void FGJSBsim::set_velocities_vt_fps(double v)
-{
-    Auxiliary->SetVtrueFPS(v);
-
-}
 void FGJSBsim::update()
 {
-    // Populate Auxiliary inputs from current Atmosphere state before running.
-    // In DCS mode, FGFDMExec skips LoadInputs(eAuxiliary) so these would
-    // remain at initialisation defaults (sea-level). Without this, Auxiliary::Run()
-    // recalculates qbar from stale density, overwriting the correct DCS value.
-    Auxiliary->in.Pressure     = Atmosphere->GetPressure();
-    Auxiliary->in.Density      = Atmosphere->GetDensity();
-    Auxiliary->in.Temperature  = Atmosphere->GetTemperature();
-    Auxiliary->in.SoundSpeed   = Atmosphere->GetSoundSpeed();
-    Auxiliary->in.KinematicViscosity = Atmosphere->GetKinematicViscosity();
-
-    Auxiliary->Run(false);
-}
-
-void FGJSBsim::set_velocities_r_aero_rad_sec(double v)
-{
-    Auxiliary->in.vPQR(3) = v;
-}
-
-void FGJSBsim::set_velocities_q_aero_rad_sec(double v)
-{
-    Auxiliary->in.vPQR(2) = v;
-}
-
-void FGJSBsim::set_velocities_p_aero_rad_sec(double v)
-{
-    Auxiliary->in.vPQR(1) = v;
-
-}
-
-void FGJSBsim::set_velocities_mach(double v)
-{
-    Auxiliary->SetMach(v);
+    // No-op in the new architecture. Auxiliary runs as part of Run(selectedModels)
+    // via LoadInputs(eAuxiliary) + Auxiliary::Run() in the normal model loop,
+    // which correctly populates all inputs from Atmosphere and Propagate.
 }
 
 void FGJSBsim::set_fcs_elevator_cmd_norm(double v)
@@ -1762,22 +1734,13 @@ void FGJSBsim::set_fcs_throttle_cmd_norm(int e, double v)
             fgSetDouble("/fdm/jsbsim/fcs/throttle-cmd-norm[4]", v);
     }
 }
-void FGJSBsim::set_atmosphere_rho_slugs_ft3(double v)
-{
-    Atmosphere->SetDensity(v);
-}
 double FGJSBsim::get_atmosphere_rho_slugs_ft3()
 {
-    return     Atmosphere->GetDensity();
-
-}
-void FGJSBsim::set_atmosphere_pressure_lbf_ft2(double v)
-{
-    Atmosphere->SetPressure(v);
+    return Atmosphere->GetDensity();
 }
 double FGJSBsim::get_atmosphere_pressure_lbf_ft2()
 {
-    return     Atmosphere->GetPressure();
+    return Atmosphere->GetPressure();
 }
 const JSBSim::FGColumnVector3& FGJSBsim::GetXYZcg(void) {
     return MassBalance->GetXYZcg();
@@ -1786,36 +1749,9 @@ const JSBSim::FGColumnVector3& FGJSBsim::GetXYZrp(void) {
     return Aircraft->GetXYZrp();
 }
 
-void FGJSBsim::set_sound_speed(double v)
-{
-    //double db = Atmosphere->GetSoundSpeed() - v;
-    //if (v > 1)
-    //throw "set_sound_speed not supported";
-    Atmosphere->SetSoundSpeed(v);
-}
 void FGJSBsim::set_altitude(double h_ft)
 {
     Propagate->SetAltitudeASL(h_ft);
-}
-
-void FGJSBsim::set_aero_beta_deg(double v)
-{
-    Auxiliary->SetBeta(v);
-}
-
-void FGJSBsim::set_aero_betadot_rad_sec(double v)
-{
-    Auxiliary->Setbdot(v);
-}
-
-void FGJSBsim::set_aero_alpha_deg(double v)
-{
-    Auxiliary->SetAlpha(v);
-}
-
-void FGJSBsim::set_aero_alphadot_rad_sec(double v)
-{
-    Auxiliary->Setadot(v);
 }
 
 void FGJSBsim::set_current_state(double ax,	//linear acceleration component in world coordinate system
@@ -1861,85 +1797,52 @@ void FGJSBsim::set_current_state_body_axis(
     double ro_kgm3
 )
 {
-    double Vt_ms = Magnitude(vx - wind_vx, vy - wind_vy, vz - wind_vz);
-    double Vt_fps = Vt_ms * METER_TO_FEET_FACTOR;
-    double VcKts = Vt_fps / 1.68781; //knots to FPS feet per second(fps).
+    // Inject aero velocity into Propagate (body velocity minus wind).
+    // LoadInputs(eAuxiliary) reads Propagate->GetUVW() into Auxiliary->in.vUVW,
+    // and Auxiliary::Run() computes vAeroUVW = in.vUVW - wind. With Winds model
+    // not running (TotalWindNED=0), vAeroUVW = in.vUVW directly.
+    // DCS axes: X forward, Y up, Z right  →  JSBSim: X forward, Y right, Z down
+    Propagate->SetUVW(1, (vx - wind_vx) * METER_TO_FEET_FACTOR);
+    Propagate->SetUVW(2, (vz - wind_vz) * METER_TO_FEET_FACTOR);
+    Propagate->SetUVW(3, -(vy - wind_vy) * METER_TO_FEET_FACTOR);
 
-    set_aero_alpha_deg(alpha_rads * RADIANS_TO_DEGREES);
-    set_aero_beta_deg(beta_rads * RADIANS_TO_DEGREES);
-    if (init_body) {
-        double factor = 1.0 / dT;
-        set_aero_alphadot_rad_sec((alpha_rads - last_alpha_rads) * factor);
-        set_aero_betadot_rad_sec((beta_rads - last_beta_rads) * factor);
-    }
-    last_alpha_rads = alpha_rads;
-    last_beta_rads = beta_rads;
-    init_body = 1;
-
-    //model->set_aero_alphadot_rad_sec(omegadotz);
-    //model->set_aero_betadot_rad_sec(omegadoty);
-
-    set_velocities_p_aero_rad_sec(omegax);  // * DEGREES_TO_RADIANS);
-    set_velocities_q_aero_rad_sec(omegaz);  // * DEGREES_TO_RADIANS);
-    set_velocities_r_aero_rad_sec(-omegay); // * DEGREES_TO_RADIANS);
-
+    // Angular rates in JSBSim body frame
+    // DCS: omegax=roll, omegay=yaw(Y+up), omegaz=pitch
+    // JSBSim: P=roll(X), Q=pitch(Y), R=yaw(Z+down)
     Propagate->SetPQR(1, omegax);
     Propagate->SetPQR(2, omegaz);
     Propagate->SetPQR(3, -omegay);
 
-    //_set_Omega_Body(Propagate->GetPQR(FGJSBBase::eP),
-    //    Propagate->GetPQR(FGJSBBase::eQ),
-    //    Propagate->GetPQR(FGJSBBase::eR));
-
-    set_velocities_u_aero_fps((vx - wind_vx) * METER_TO_FEET_FACTOR);
-    set_velocities_v_aero_fps((vz - wind_vz) * METER_TO_FEET_FACTOR);
-    // DCS Y+ is up, JSBSim w is Z+ down: negate (vy - wind_vy)
-    set_velocities_w_aero_fps(-(vy - wind_vy) * METER_TO_FEET_FACTOR);
-
-    /*
-        attitude/phi-deg         attitude/phi-rad         attitude/roll-rad        
-        attitude/theta-deg       attitude/pitch-rad       attitude/theta-rad        
-        attitude/psi-deg         attitude/psi-rad
-    */
-
-    set_velocities_vt_fps(Vt_fps);
-    UpdateWindMatrices();
+    // Attitude quaternion and Euler angles
     set_roll_pitch_yaw(roll, pitch, yaw);
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/phi-deg", 0);
     fgSetDouble("/fdm/jsbsim/attitude/phi-rad", roll);
-
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/pitch-rad", pitch);
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/psi-deg", 0);
     fgSetDouble("/fdm/jsbsim/attitude/psi-rad", yaw);
-
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/roll-rad", roll);
     fgSetDouble("/fdm/jsbsim/attitude/theta-deg", pitch * RADIANS_TO_DEGREES);
-    set_vc_kts(VcKts);
+
+    // Alpha/beta rates - Auxiliary::Run() zeros adot/bdot then recomputes
+    // from in.vUVWdot (which is stale in DCS mode). We compute from
+    // frame-to-frame differencing and apply AFTER Run() in update().
+    if (init_body) {
+        double factor = 1.0 / dT;
+        pending_adot = (alpha_rads - last_alpha_rads) * factor;
+        pending_bdot = (beta_rads - last_beta_rads) * factor;
+    }
+    last_alpha_rads = alpha_rads;
+    last_beta_rads = beta_rads;
+    init_body = true;
+
+    // DCS-provided Vt for debug logging (Auxiliary will compute its own from vAeroUVW)
+    double Vt_ms = Magnitude(vx - wind_vx, vy - wind_vy, vz - wind_vz);
+    double Vt_fps = Vt_ms * METER_TO_FEET_FACTOR;
     fgSetDouble("/fdm/jsbsim/velocities/vt-ms", Vt_ms);
-    //printf("Body angles (%.3f, %.3f, %.3f)\n",
-    //model->fgGetDouble("/fdm/jsbsim/attitude/phi-deg"),
-    //model->fgGetDouble("/fdm/jsbsim/attitude/theta-deg"),
-    //    model->fgGetDouble("/fdm/jsbsim/attitude/psi-deg"));
 
-    //    model->fgSetDouble("/fdm/jsbsim/attitude/theta-rad", pitch);
-    //Auxiliary->Getbeta();
-    //Auxiliary->Getqbar();
-    //Auxiliary->GetVt();
-    //Auxiliary->GetTb2w();
-    //Auxiliary->GetTw2b();
-    //MassBalance->StructuralToBody(Aircraft->GetXYZrp());
-    double twovel = Vt_fps * 2;
-    double qbar_psf = 0.5 * (ro_kgm3 * KGM3_TO_SLUGS_FT3) * Vt_fps * Vt_fps;
-    double bi2vel = (twovel > JSB_NEARLY_ZERO) ? Wingspan / twovel : 0;
-    double ci2vel = (twovel > JSB_NEARLY_ZERO) ? Wingchord / twovel : 0;
-    set_qbar(qbar_psf);
-    set_bi2vel(bi2vel);
-    set_ci2vel(ci2vel);
-
-    update();
-
-    // --- debug instrumentation: aero state ---
+    // --- debug instrumentation: DCS-provided aero state for comparison ---
     if (dbg.flag->getBoolValue()) {
+        double VcKts = Vt_fps / 1.68781;
+        double twovel = Vt_fps * 2;
+        double qbar_psf = 0.5 * (ro_kgm3 * KGM3_TO_SLUGS_FT3) * Vt_fps * Vt_fps;
+        double bi2vel = (twovel > JSB_NEARLY_ZERO) ? Wingspan / twovel : 0;
+        double ci2vel = (twovel > JSB_NEARLY_ZERO) ? Wingchord / twovel : 0;
         dbg.alpha_deg->setDoubleValue(alpha_rads * RADIANS_TO_DEGREES);
         dbg.beta_deg->setDoubleValue(beta_rads * RADIANS_TO_DEGREES);
         dbg.alphadot->setDoubleValue(dbg.src_adot->getDoubleValue());
@@ -1958,27 +1861,6 @@ void FGJSBsim::set_current_state_body_axis(
         dbg.roll->setDoubleValue(roll);
         dbg.yaw->setDoubleValue(yaw);
     }
-}
-void FGJSBsim::set_qbar(double v)
-{
-    Auxiliary->SetQBar(v);
-}
-void FGJSBsim::set_bi2vel(double v)
-{
-    Aerodynamics->SetBI2Vel(v);
-}
-void FGJSBsim::set_ci2vel(double v)
-{
-    Aerodynamics->SetCI2Vel(v);
-}
-void FGJSBsim::set_vc_kts(double v)
-{
-    Auxiliary->SetVcas(v);
-}
-void FGJSBsim::UpdateWindMatrices()
-{
-    Auxiliary->UpdateWindMatrices();
-//    Auxiliary->Run(false);
 }
 void FGJSBsim::OpenPropertyInspectionPort(int port)
 {

@@ -202,34 +202,18 @@ public:
         return false;
     }
     void set_roll_pitch_yaw(double roll, double pitch, double yaw);
-    void set_velocities_w_aero_fps(double v);
-    void set_velocities_v_aero_fps(double v);
-    void set_velocities_vt_fps(double v);
-    void update();
-    void set_velocities_u_aero_fps(double v);
-    void set_velocities_r_aero_rad_sec(double v);
-    void set_vc_kts(double v);
-    void set_velocities_q_aero_rad_sec(double v);
-    void set_velocities_p_aero_rad_sec(double v);
-    void set_velocities_mach(double v);
+    void update(); // no-op in DCS mode; kept for interface compat
     void set_fcs_elevator_cmd_norm(double v);
     void set_fcs_aileron_cmd_norm(double v);
     void set_fcs_rudder_cmd_norm(double v);
     void set_fcs_throttle_cmd_norm(int e, double v);
     void set_fcs_gear_cmd_norm(double v);
     double get_pressure_at_atltiude_lbf_ft2(double altitude) const;
-    void set_atmosphere_rho_slugs_ft3(double v);
     double get_atmosphere_rho_slugs_ft3();
-    void set_atmosphere_pressure_lbf_ft2(double v);
     double get_atmosphere_pressure_lbf_ft2();
     const JSBSim::FGColumnVector3& GetXYZcg(void);
     const JSBSim::FGColumnVector3& GetXYZrp(void);
-    void set_sound_speed(double v);
     void set_altitude(double h_ft);
-    void set_aero_beta_deg(double v);
-    void set_aero_betadot_rad_sec(double v);
-    void set_aero_alpha_deg(double v);
-    void set_aero_alphadot_rad_sec(double v);
     void set_current_state(double ax,           //linear acceleration component in world coordinate system
                            double ay,           //linear acceleration component in world coordinate system
                            double az,           //linear acceleration component in world coordinate system
@@ -262,10 +246,8 @@ public:
         double dT,
         double ro_kgm3
     );
-    void set_qbar(double v);
-    void set_bi2vel(double v);
-    void set_ci2vel(double v);
-    void UpdateWindMatrices();
+    // Removed: set_qbar, set_bi2vel, set_ci2vel, UpdateWindMatrices
+    // These are now computed by Auxiliary::Run() via LoadInputs in the normal model loop.
 
     bool caught_wire_ft(double t, const double pt[4][3])
     {
@@ -299,6 +281,8 @@ public:
     bool init_body = false;
     double last_alpha_rads = 0;
     double last_beta_rads = 0;
+    double pending_adot = 0;
+    double pending_bdot = 0;
 
     //private:
     JSBSim::FGFDMExec* fdmex;
