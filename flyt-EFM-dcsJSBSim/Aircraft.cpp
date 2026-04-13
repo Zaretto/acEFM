@@ -48,8 +48,11 @@ void ed_fm_set_draw_args(EdDrawArgument* drawargs, size_t size)
 }
 
 
+extern void rec_sim(double dt);  // defined in DCS_interface.cpp
+
 void ed_fm_simulate(double dt) {
     //    FGJSBsim *model = get_model();
+    rec_sim(dt);
     get_model()->update(dt);
     dcs_i->simulate(dt);
     //printf("N1 %4.0f alt %5.0f VC %4.0f angles(%5f,%5f) alpha %3.2f beta %3.2f F(%.0f,%.0f,%.0f) M(%.2f,%.2f,%.2f) qb %.4f, el %.1f al %.1f\n",

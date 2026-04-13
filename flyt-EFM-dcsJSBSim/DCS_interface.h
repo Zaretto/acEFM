@@ -168,22 +168,22 @@ protected:
     T Handle;
     SGPropertyNode* input_node;
     T1 Factor;
-    T1 Value, Delta;
+    T1 Value, Delta, Offset;
     int c;
     std::string Property;
 
 public:
     AnimateItem() : Handle(0), Name(), input_node(nullptr), LastVal(-10000000.0), Factor(1.0), c(0), Delta(0.0001) {}
-    AnimateItem(T handle, SGPropertyNode* input_node, std::string prop, T1 factor, T1 delta) 
-        : Handle(handle), Factor(factor), input_node(input_node), Delta(delta), Property(prop)
+    AnimateItem(T handle, SGPropertyNode* input_node, std::string prop, T1 factor, T1 delta, T1 offset) 
+        : Handle(handle), Factor(factor), input_node(input_node), Delta(delta), Property(prop), Offset(offset)
     {
         Value = NO_CHANGE;
         c = 0;
     }
     T Get() { return Handle; }
     virtual const std::string& GetProperty() const { return Property; }
-    virtual T1 GetValue() { return Value; }
-    virtual T1 GetTransformedValue() { return Value * Factor; }
+    virtual T1 GetValue() { return Value-Offset; }
+    virtual T1 GetTransformedValue() { return (Value-Offset) * Factor; }
     bool UpdateNeeded()
     {
         if (input_node != nullptr) {
@@ -207,8 +207,8 @@ protected:
 
 
 public:
-    CockpitItem(void *handle, FGJSBsim* model, std::string name, std::string prop, double factor, double delta) 
-        : AnimateItem<void*, double>(handle, model->PropertyManager->GetNode(prop), prop, factor, delta), Name(name)
+    CockpitItem(void *handle, FGJSBsim* model, std::string name, std::string prop, double factor, double delta, double offset) 
+        : AnimateItem<void*, double>(handle, model->PropertyManager->GetNode(prop), prop, factor, delta, offset), Name(name)
     {
         DebugNode = model->PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-cockpit-params", true);
     }
@@ -238,8 +238,8 @@ class LinearActuator : public CockpitItem
 {
     enum class ActuatorType { ActuatorTypeNone, GenevaDrive, LinearDrive} ActuatorType;
 public:
-    LinearActuator(FGJSBsim* model, void* Handle, const std::string &name,  const std::string &prop, const std::string &type, double factor, double delta=0.0001)
-        :CockpitItem(Handle, model, name, prop, factor, delta)
+    LinearActuator(FGJSBsim* model, void* Handle, const std::string& name, const std::string& prop, const std::string& type, double factor, double delta = 0.0001, double offset = 0.0)
+        :CockpitItem(Handle, model, name, prop, factor, delta, offset)
     {
         if (type.c_str() == std::string("GenevaDrive"))
             ActuatorType = ActuatorType::GenevaDrive;
@@ -271,7 +271,7 @@ public:
                 break;
 
             case ActuatorType::LinearDrive:
-                value = fmod(value, 1000) / 10.0;
+                value = fmod(value, Factor) / Factor;
                 break;
             }
             api.pfn_ed_cockpit_update_parameter_with_number(Handle, value);
@@ -301,14 +301,14 @@ public:
             printf("Cannot locate %s - no connection to cockpit\n", param.c_str());
         return 0;
     }
-    void AddItem(FGJSBsim* model, std::string param, std::string prop, double factor = 1.0, double delta=0.0001)
+    void AddItem(FGJSBsim* model, std::string param, std::string prop, double factor = 1.0, double delta = 0.0001, double offset = 0.0)
     {
         void *handle = FindHandle(param);
 
         if (handle)
         {
             printf("CockpitItem:: %s -> %s (%.1f) == $%x\n", param.c_str(), prop.c_str(), factor, handle);
-            items.push_back(new CockpitItem(handle, model, param, prop, factor, delta));
+            items.push_back(new CockpitItem(handle, model, param, prop, factor, delta, offset));
         }
         else
             printf("Cockpit:: failed to locate parameter_name %s\n", param.c_str());
@@ -507,10 +507,10 @@ public:
         items.push_back(ci);
     }
 
-    void AddItem(int drawArgId, std::string prop, float factor, float delta)
+    void AddItem(int drawArgId, std::string prop, float factor, float delta, float offset)
     {
         printf("DrawArg:: %d -> %s (%.1f) ~%.4f\n", drawArgId, prop.c_str(), factor, delta);
-        items.push_back(new AnimateItem<int, float>(drawArgId, model->PropertyManager->GetNode(prop), prop, factor, delta));
+        items.push_back(new AnimateItem<int, float>(drawArgId, model->PropertyManager->GetNode(prop), prop, factor, delta, offset));
     }
     void Update(FGJSBsim* model, EdDrawArgument* da, size_t size)
     {

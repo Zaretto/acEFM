@@ -5,6 +5,7 @@
 #include "fm_math.h"
 #include "math/FGQuaternion.h"
 #include "models/FGPropulsion.h"
+#include "models/FGMassBalance.h"
 #include <string>
 Vec3d center_of_mass;                    // m
 Vec3d common_moment;                     // kg/m^2
@@ -45,6 +46,158 @@ static long long debug_frame_counter = 0;
 int frame_count = 0;
 int nullf() { return 0; }
 
+// Last-reported mass/CG/inertia from DCS (via ed_fm_set_current_mass_state),
+// stored here for reference (DCS owns this state; we don't push it into JSBSim).
+static double last_dcs_mass_kg          = 0;
+static double last_dcs_moi_x_kgm2       = 0;
+static double last_dcs_moi_y_kgm2       = 0;
+static double last_dcs_moi_z_kgm2       = 0;
+
+// Cumulative mass-change deltas we have already served to DCS via
+// ed_fm_change_mass.  DCS accumulates these into its own mass state, so each
+// frame we report *incremental* changes relative to what we previously served.
+// Units: kg (mass), kg*m^2 (inertia deltas).
+static double served_mass_delta_kg      = 0;
+static double served_moi_x_delta_kgm2   = 0;
+static double served_moi_y_delta_kgm2   = 0;
+static double served_moi_z_delta_kgm2   = 0;
+
+// ============================================================================
+// Callback recording
+// ----------------------------------------------------------------------------
+// Writes every ed_fm_* callback to c:/temp/dcs-bridge-log.csv so the exact
+// sequence can be replayed offline through TestPlane.exe.  Activated when
+// /fdm/jsbsim/acefm/debug-record is non-zero (re-checked every 64 callbacks so
+// it's cheap).  Format per line:
+//
+//   time_us,METHOD,param1,param2,...
+//
+// METHODs: ATM (atmosphere), STATE (world-frame), STATE_BODY (body-frame),
+//          CMD (ed_fm_set_command), SIM (ed_fm_simulate).
+// ============================================================================
+static FILE*          rec_file      = nullptr;
+static bool           rec_enabled   = false;
+static bool           rec_qpc_init  = false;
+static LARGE_INTEGER  rec_qpc_freq;
+static int            rec_check_ctr = 0;
+static const char*    REC_LOG_PATH  = "c:/temp/dcs-bridge-log.csv";
+
+static long long rec_now_us()
+{
+    if (!rec_qpc_init) {
+        QueryPerformanceFrequency(&rec_qpc_freq);
+        rec_qpc_init = true;
+    }
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    return (long long)((double)c.QuadPart * 1000000.0 / (double)rec_qpc_freq.QuadPart);
+}
+
+static void rec_close()
+{
+    if (rec_file) { fflush(rec_file); fclose(rec_file); rec_file = nullptr; }
+    rec_enabled = false;
+}
+
+// Re-evaluate the debug-record property periodically and open/close the log
+// accordingly.  Returns true if recording is currently active.
+static bool rec_active()
+{
+    if ((++rec_check_ctr & 0x3F) == 0) {
+        FGJSBsim* m = get_model();
+        bool want = m && (m->fgGetDouble("/fdm/jsbsim/acefm/debug-record") != 0.0);
+        if (want && !rec_file) {
+            rec_file = fopen(REC_LOG_PATH, "w");
+            if (rec_file) {
+                fprintf(rec_file, "# dcs-bridge callback log\n");
+                fprintf(rec_file, "# time_us,METHOD,params...\n");
+            }
+            rec_enabled = (rec_file != nullptr);
+        } else if (!want && rec_file) {
+            rec_close();
+        }
+    }
+    return rec_enabled && rec_file;
+}
+
+static void rec_atm(double h, double t, double a, double ro, double p,
+                    double wvx, double wvy, double wvz)
+{
+    if (!rec_active()) return;
+    fprintf(rec_file,
+        "%lld,ATM,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n",
+        rec_now_us(), h, t, a, ro, p, wvx, wvy, wvz);
+}
+
+static void rec_state(double ax, double ay, double az,
+                      double vx, double vy, double vz,
+                      double px, double py, double pz,
+                      double odx, double ody, double odz,
+                      double ox, double oy, double oz,
+                      double qx, double qy, double qz, double qw)
+{
+    if (!rec_active()) return;
+    fprintf(rec_file,
+        "%lld,STATE,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,"
+        "%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n",
+        rec_now_us(), ax, ay, az, vx, vy, vz, px, py, pz,
+        odx, ody, odz, ox, oy, oz, qx, qy, qz, qw);
+}
+
+static void rec_state_body(double ax, double ay, double az,
+                           double vx, double vy, double vz,
+                           double wvx, double wvy, double wvz,
+                           double odx, double ody, double odz,
+                           double ox, double oy, double oz,
+                           double yaw, double pitch, double roll,
+                           double alpha, double beta)
+{
+    if (!rec_active()) return;
+    fprintf(rec_file,
+        "%lld,STATE_BODY,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,"
+        "%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n",
+        rec_now_us(), ax, ay, az, vx, vy, vz, wvx, wvy, wvz,
+        odx, ody, odz, ox, oy, oz, yaw, pitch, roll, alpha, beta);
+}
+
+static void rec_cmd(int command, float value)
+{
+    if (!rec_active()) return;
+    fprintf(rec_file, "%lld,CMD,%d,%.15g\n", rec_now_us(), command, (double)value);
+}
+
+// Record what DCS tells the bridge about current mass / CG / moments of inertia
+// (ed_fm_set_current_mass_state).  Units as supplied by DCS: kg, m, kg*m^2.
+static void rec_mass_in(double mass,
+                        double cgx, double cgy, double cgz,
+                        double moix, double moiy, double moiz)
+{
+    if (!rec_active()) return;
+    fprintf(rec_file,
+        "%lld,MASS_IN,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n",
+        rec_now_us(), mass, cgx, cgy, cgz, moix, moiy, moiz);
+}
+
+// Record what the bridge returns to DCS via ed_fm_change_mass.  Units: kg, m,
+// kg*m^2.  Each record is a single "accept" iteration of the change loop.
+static void rec_mass_out(double dmass,
+                         double dx, double dy, double dz,
+                         double dmoix, double dmoiy, double dmoiz)
+{
+    if (!rec_active()) return;
+    fprintf(rec_file,
+        "%lld,MASS_OUT,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g,%.15g\n",
+        rec_now_us(), dmass, dx, dy, dz, dmoix, dmoiy, dmoiz);
+}
+
+// Called from ed_fm_simulate (which lives in Aircraft.cpp).
+void rec_sim(double dt)
+{
+    if (!rec_active()) return;
+    fprintf(rec_file, "%lld,SIM,%.15g\n", rec_now_us(), dt);
+    fflush(rec_file);  // flush every tick so the log is usable after a crash
+}
+
 static std::map<std::string, double> conversion_map = {
 {"METER_TO_FEET", 3.28084},
 {"FEET_TO_METER  ", 0.3048},
@@ -70,7 +223,8 @@ void DCS_interface::initialize(FGJSBsim * _model)
             auto prop = drawarg->getStringValue("property");
             auto factor = drawarg->getFloatValue("factor", 1.0);
             auto delta = drawarg->getFloatValue("delta", 0.0001);
-            drawArguments.AddItem(drawarg->getIndex(), prop, factor, delta);
+            auto offset = drawarg->getFloatValue("offset", 0);
+            drawArguments.AddItem(drawarg->getIndex(), prop, factor, delta, offset);
             ;
         }
     }
@@ -436,6 +590,7 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
     {
 #endif
         FGJSBsim* model = get_model();
+        rec_atm(h, t, a, _ro_kgm3, p_Pa, wind_vx_ms, wind_vy_ms, wind_vz_ms);
         // Convert units
         double density_slugs_ft3 = ro_kgm3 * KGM3_TO_SLUGS_FT3;
         double pressure_psf = p_Pa * PA_TO_LBF_FT2;
@@ -502,7 +657,20 @@ void ed_fm_set_current_mass_state(double mass,
     double moment_of_inertia_y,
     double moment_of_inertia_z)
 {
-   mass = mass;
+   rec_mass_in(mass,
+               center_of_mass_x, center_of_mass_y, center_of_mass_z,
+               moment_of_inertia_x, moment_of_inertia_y, moment_of_inertia_z);
+   // DCS is telling us its current ground-truth mass state.  Anything we
+   // previously pushed via ed_fm_change_mass is now baked into these numbers,
+   // so reset the served-delta tracker.
+   last_dcs_mass_kg    = mass;
+   last_dcs_moi_x_kgm2 = moment_of_inertia_x;
+   last_dcs_moi_y_kgm2 = moment_of_inertia_y;
+   last_dcs_moi_z_kgm2 = moment_of_inertia_z;
+   served_mass_delta_kg    = 0;
+   served_moi_x_delta_kgm2 = 0;
+   served_moi_y_delta_kgm2 = 0;
+   served_moi_z_delta_kgm2 = 0;
    center_of_mass.x = center_of_mass_x;
    center_of_mass.y = center_of_mass_y;
    center_of_mass.z = center_of_mass_z;
@@ -536,6 +704,9 @@ void ed_fm_set_current_state(double ax,	//linear acceleration component in world
 )
 {
     FGJSBsim *model = get_model();
+    rec_state(ax, ay, az, vx, vy, vz, px, py, pz,
+              omegadotx, omegadoty, omegadotz, omegax, omegay, omegaz,
+              quaternion_x, quaternion_y, quaternion_z, quaternion_w);
     static JSBSim::FGQuaternion quat;
     model->set_current_state(ax, ay, az, vx, vy, vz, px, py, pz, omegadotx, omegadoty, omegadotz, omegax, omegay, omegaz, quaternion_x, quaternion_y, quaternion_z, quaternion_w);
     //quat(1) = quaternion_w;
@@ -569,6 +740,9 @@ void ed_fm_set_current_state_body_axis(
     static double last_beta_rads;
 
     FGJSBsim *model = get_model();
+    rec_state_body(ax, ay, az, vx, vy, vz, wind_vx, wind_vy, wind_vz,
+                   omegadotx, omegadoty, omegadotz, omegax, omegay, omegaz,
+                   yaw, pitch, roll, alpha_rads, beta_rads);
     model->set_current_state_body_axis(
         ax, ay, az,                      // linear acceleration component in body coordinate system
         vx, vy, vz,                      // linear velocity component in body coordinate system
@@ -603,6 +777,24 @@ while (ed_fm_change_mass(delta_mass,x,y,z,piece_of_mass_MOI_x,piece_of_mass_MOI_
 //internal DCS calculations for changing mass, center of gravity,  and moments of inertia
 }
 */
+//
+// ed_fm_change_mass
+//
+// DCS calls this in a loop after ed_fm_simulate, applying each returned delta
+// until the function returns false.  We use it to keep DCS's mass / moments of
+// inertia in step with JSBSim's MassBalance model, so the CSAS (which was
+// designed around JSBSim's inertia) and DCS's integrator agree on the plant.
+//
+// The entry.lua moment_of_inertia is the initial value DCS starts with.  Each
+// frame, we compute the current target (from JSBSim's MassBalance) and report
+// the incremental delta that still needs to be applied to bring DCS in line.
+// DCS accumulates these deltas into its internal mass state.
+//
+// Mass delta is reported at delta_mass_pos = CG so DCS's parallel-axis term
+// doesn't double-count the inertia delta we're also supplying explicitly.
+//
+// Units: DCS uses SI (kg, m, kg*m^2); JSBSim stores slugs, feet, slug*ft^2.
+//
 bool ed_fm_change_mass(double &delta_mass,
     double &delta_mass_pos_x,
     double &delta_mass_pos_y,
@@ -611,29 +803,72 @@ bool ed_fm_change_mass(double &delta_mass,
     double &delta_mass_moment_of_inertia_y,
     double &delta_mass_moment_of_inertia_z)
 {
-    return false;
-    // original demo code
-    /*
-    if (fuel_consumption_since_last_time > 0)
-    {
-    delta_mass                = fuel_consumption_since_last_time;
-    delta_mass_pos_x = -1.0;
-    delta_mass_pos_y =  1.0;
-    delta_mass_pos_z =  0;
+    FGJSBsim* model = get_model();
+    if (!model) return false;
 
-    delta_mass_moment_of_inertia_x   = 0;
-    delta_mass_moment_of_inertia_y   = 0;
-    delta_mass_moment_of_inertia_z   = 0;
+    // JSBSim current values (GetIxx/Iyy/Izz are private - use GetJ()).
+    double jsb_mass_slugs = model->MassBalance->GetMass();
+    const JSBSim::FGMatrix33& J = model->MassBalance->GetJ();
+    double jsb_ixx_sft2   = J(1,1);
+    double jsb_iyy_sft2   = J(2,2);
+    double jsb_izz_sft2   = J(3,3);
 
-    fuel_consumption_since_last_time = 0; // set it 0 to avoid infinite loop, because it called in cycle
-    // better to use stack like structure for mass changing
+    // Convert to SI
+    // 1 slug = 14.593903 kg
+    // 1 slug*ft^2 = 1.355817948 kg*m^2
+    const double SLUG_TO_KG      = 14.59390293720636;
+    const double SLUGFT2_TO_KGM2 = 1.3558179483314;
+
+    double jsb_mass_kg    = jsb_mass_slugs * SLUG_TO_KG;
+    double jsb_moi_x_kgm2 = jsb_ixx_sft2   * SLUGFT2_TO_KGM2;
+    double jsb_moi_y_kgm2 = jsb_iyy_sft2   * SLUGFT2_TO_KGM2;
+    double jsb_moi_z_kgm2 = jsb_izz_sft2   * SLUGFT2_TO_KGM2;
+
+    // Compute delta relative to what DCS currently has.  DCS's current total is
+    // last_dcs_* (from its set_current_mass_state) plus everything we've already
+    // served via previous ed_fm_change_mass returns.
+    double dcs_current_mass    = last_dcs_mass_kg     + served_mass_delta_kg;
+    double dcs_current_moi_x   = last_dcs_moi_x_kgm2  + served_moi_x_delta_kgm2;
+    double dcs_current_moi_y   = last_dcs_moi_y_kgm2  + served_moi_y_delta_kgm2;
+    double dcs_current_moi_z   = last_dcs_moi_z_kgm2  + served_moi_z_delta_kgm2;
+
+    double dmass  = jsb_mass_kg    - dcs_current_mass;
+    double dmoi_x = jsb_moi_x_kgm2 - dcs_current_moi_x;
+    double dmoi_y = jsb_moi_y_kgm2 - dcs_current_moi_y;
+    double dmoi_z = jsb_moi_z_kgm2 - dcs_current_moi_z;
+
+    // Skip if nothing meaningful has changed since last served.
+    const double EPS_MASS = 0.001;      // 1 gram
+    const double EPS_MOI  = 0.1;        // 0.1 kg*m^2
+    if (fabs(dmass)  < EPS_MASS &&
+        fabs(dmoi_x) < EPS_MOI  &&
+        fabs(dmoi_y) < EPS_MOI  &&
+        fabs(dmoi_z) < EPS_MOI) {
+        return false;
+    }
+
+    // Mass goes in at the CG so DCS's parallel-axis term is zero and the MOI
+    // delta we report is taken as-is.  CG from JSBSim is in inches (structural
+    // frame) - DCS expects meters in body frame.  For a delta reported AT the
+    // current CG, body-frame position is (0,0,0) in CG-relative coordinates.
+    delta_mass                       = dmass;
+    delta_mass_pos_x                 = 0.0;
+    delta_mass_pos_y                 = 0.0;
+    delta_mass_pos_z                 = 0.0;
+    delta_mass_moment_of_inertia_x   = dmoi_x;
+    delta_mass_moment_of_inertia_y   = dmoi_y;
+    delta_mass_moment_of_inertia_z   = dmoi_z;
+
+    // Bank what we just served so subsequent calls in the same DCS pull-loop
+    // return false until the next frame produces another change.
+    served_mass_delta_kg    += dmass;
+    served_moi_x_delta_kgm2 += dmoi_x;
+    served_moi_y_delta_kgm2 += dmoi_y;
+    served_moi_z_delta_kgm2 += dmoi_z;
+
+    rec_mass_out(dmass, 0.0, 0.0, 0.0, dmoi_x, dmoi_y, dmoi_z);
+
     return true;
-    }
-    else
-    {
-    return false;
-    }
-    */
 }
 
 /*
@@ -703,6 +938,7 @@ input handling
 void ed_fm_set_command(int command, float value)
 {
     FGJSBsim *model = get_model();
+    rec_cmd(command, value);
     if (command == 2004) { //iCommandPlaneThrustCommon
         // +1 off
         // -1 full

@@ -593,8 +593,8 @@ namespace Symon
             if (vars.Count > 0)
             {
                 vars.Add("");
-                Clipboard.SetText(string.Join("\r\n", vars));
             }
+                Clipboard.SetText(string.Join("\r\n", vars));
         }
 
     }

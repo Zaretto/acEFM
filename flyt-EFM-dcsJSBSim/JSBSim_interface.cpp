@@ -347,7 +347,7 @@ FGJSBsim::FGJSBsim(double dt)
     fgSetDouble("/fdm/trim/aileron", FCS->GetDaCmd());
     fgSetDouble("/fdm/trim/rudder", FCS->GetDrCmd());
 
-    //OpenPropertyInspectionPort();
+    OpenPropertyInspectionPort();
 
     //hook_root_struct = FGColumnVector3(
     //    fgGetDouble("/fdm/jsbsim/systems/hook/tailhook-offset-x-in", 196),
@@ -1866,13 +1866,13 @@ void FGJSBsim::OpenPropertyInspectionPort(int port)
 {
     auto input = fdmex->GetInput();
 
- // Create minimal input configuration
-    JSBSim::Element* inputElement = new JSBSim::Element("input");
+    // Create the Element via Element_ptr (SGSharedPtr<Element>) so that
+    // reference counting is correct. FGInput::Load wraps the raw pointer in
+    // SGSharedPtr internally; using Element_ptr here ensures the element
+    // survives until all internal references are released.
+    JSBSim::Element_ptr inputElement(new JSBSim::Element("input"));
     inputElement->AddAttribute("port", std::to_string(port));
 
-    // Attempt to load - JSBSim will handle if already configured
     input->Load(inputElement);
     input->Enable();
-
-    delete inputElement;
 }
