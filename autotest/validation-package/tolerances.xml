@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  aceFM QTG-Style Validation Tolerance Specification
+
+  Tolerance types:
+    tol_abs: absolute tolerance (native JSBSim units)
+    tol_rel: relative tolerance as fraction (0.05 = 5%)
+  A property PASSES if it satisfies EITHER condition.
+
+  Data source levels (FAA QTG-inspired, informational):
+    "flight_test" - actual flight test data
+    "predicted"   - engineering simulation / manufacturer data
+    "handbook"    - pilot handbook / public domain
+
+  Example entry - uncomment and adapt for your aircraft:
+
+  <test name="level_accel" script="scripts/level_accel.xml">
+    <description>Level acceleration from 200 to 400 KIAS at 20,000 ft</description>
+    <data-source level="predicted"/>
+
+    <output-file name="autotest/output/level_accel_primary_flight.csv"
+                 baseline="level_accel_primary_flight.csv">
+      <property name="velocities/vc-kts"   tol_abs="2.0"  tol_rel="0.02"/>
+      <property name="position/h-agl-ft"   tol_abs="100"  tol_rel="0.05"/>
+      <default tol_abs="1e-3" tol_rel="0.01"/>
+    </output-file>
+  </test>
+-->
+<validation-tolerances>
+
+</validation-tolerances>
