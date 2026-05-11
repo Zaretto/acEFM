@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import fnmatch
+import math
 import os
 import re
 import shutil
@@ -1481,9 +1482,79 @@ def _parse_test_definition(aircraft_dir, group):
 
 
 
+def _precision_from_tolerance(tol_spec):
+    """Derive a formatting precision from a ToleranceSpec.
+
+    Returns (mode, n) where mode is 'decimals' or 'sigfigs', or None if the
+    spec has no usable tolerance. One extra digit of margin is added so
+    round-trip noise stays well below the tolerance.
+    """
+    if tol_spec is None:
+        return None
+    tol_abs = tol_spec.tol_abs
+    tol_rel = tol_spec.tol_rel
+    if tol_abs is not None and tol_abs > 0:
+        decimals = max(0, int(math.ceil(-math.log10(tol_abs))) + 1)
+        return ("decimals", decimals)
+    if tol_rel is not None and tol_rel > 0:
+        sigfigs = max(1, int(math.ceil(-math.log10(tol_rel))) + 1)
+        return ("sigfigs", sigfigs)
+    return None
+
+
+def _format_quantised(value, prec):
+    """Format a float to the given precision, trimming trailing zeros."""
+    if prec is None or pd.isna(value):
+        return value
+    mode, n = prec
+    if mode == "decimals":
+        return np.format_float_positional(
+            float(value), precision=n, unique=False, fractional=True, trim="-"
+        )
+    return np.format_float_positional(
+        float(value), precision=n, unique=False, fractional=False, trim="-"
+    )
+
+
+def _quantise_csv_for_baseline(output_path, dest_path, of_spec):
+    """Write output_path to dest_path, rounding each column to its tolerance.
+
+    Columns with no tolerance (including Time) are written as pandas would
+    normally render them.
+    """
+    df = pd.read_csv(output_path)
+
+    col_prec = {}
+    for col in df.columns:
+        col_clean = col.strip()
+        if col_clean.lower() in ("time", "t", "time (s)", "time(s)"):
+            continue
+        tol = of_spec.get_tolerance(col_clean)
+        if tol is None:
+            short = strip_jsbsim_prefix(col_clean)
+            if short != col_clean:
+                tol = of_spec.get_tolerance(short)
+        prec = _precision_from_tolerance(tol)
+        if prec is not None:
+            col_prec[col] = prec
+
+    if col_prec:
+        out_df = df.copy()
+        for col, prec in col_prec.items():
+            out_df[col] = df[col].map(lambda v, p=prec: _format_quantised(v, p))
+    else:
+        out_df = df
+
+    out_df.to_csv(dest_path, index=False)
+
+
 def promote_baselines(aircraft_dir, tests, test_filter=None):
     """
     Copy output CSVs to validation-package as new baselines.
+
+    Values are quantised to the precision implied by each property's
+    tolerance so that insignificant floating-point noise between runs does
+    not show up as a git diff on promoted baselines.
 
     If test_filter is provided, only promote that test.
     """
@@ -1497,12 +1568,16 @@ def promote_baselines(aircraft_dir, tests, test_filter=None):
         for of_spec in test.output_files:
             output_path = Path(aircraft_dir) / of_spec.output_name
             baseline_dest = val_pkg_dir / of_spec.baseline_name
-            if output_path.exists():
-                shutil.copy2(output_path, baseline_dest)
-                promoted.append((test.name, of_spec.output_name, of_spec.baseline_name))
-                print(f"  Promoted: {of_spec.output_name} -> validation-package/{of_spec.baseline_name}")
-            else:
+            if not output_path.exists():
                 print(f"  WARNING: Output not found: {output_path}")
+                continue
+            try:
+                _quantise_csv_for_baseline(output_path, baseline_dest, of_spec)
+            except Exception as e:
+                print(f"  WARNING: quantise failed for {of_spec.output_name} ({e}); copying raw")
+                shutil.copy2(output_path, baseline_dest)
+            promoted.append((test.name, of_spec.output_name, of_spec.baseline_name))
+            print(f"  Promoted: {of_spec.output_name} -> validation-package/{of_spec.baseline_name}")
 
     return promoted
 
