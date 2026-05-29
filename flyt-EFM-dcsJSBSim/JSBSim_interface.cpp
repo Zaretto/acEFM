@@ -601,8 +601,6 @@ static const std::vector<int> dcsModels = {
     JSBSim::FGFDMExec::eOutput,
 };
 
-extern "C" { extern int DCS__active; }
-
 // Run an iteration of the EOM (equations of motion)
 void FGJSBsim::update(double dt)
 {
@@ -613,22 +611,16 @@ void FGJSBsim::update(double dt)
     }
     fdmex->Setdt(dt);
 
-    bool success;
-    if (DCS__active) {
-        // DCS mode: run selected models only.
-        // Propagate is skipped (DCS owns position/velocity integration).
-        // Atmosphere runs with override properties providing DCS values.
-        // Auxiliary runs via LoadInputs, correctly computing all derived quantities.
-        success = fdmex->Run(dcsModels);
+    // DCS mode: run selected models only.
+    // Propagate is skipped (DCS owns position/velocity integration).
+    // Atmosphere runs with override properties providing DCS values.
+    // Auxiliary runs via LoadInputs, correctly computing all derived quantities.
+    bool success = fdmex->Run(dcsModels);
 
-        // Apply alpha/beta rates AFTER Run, because Auxiliary::Run() zeros
-        // adot/bdot and recomputes from in.vUVWdot (stale in DCS mode).
-        Auxiliary->Setadot(pending_adot);
-        Auxiliary->Setbdot(pending_bdot);
-    } else {
-        // Standalone mode (TestPlane): run all models normally
-        success = fdmex->Run();
-    }
+    // Apply alpha/beta rates AFTER Run, because Auxiliary::Run() zeros
+    // adot/bdot and recomputes from in.vUVWdot (stale in DCS mode).
+    Auxiliary->Setadot(pending_adot);
+    Auxiliary->Setbdot(pending_bdot);
 
     if (!success) {
         crashed = true;
@@ -1661,10 +1653,14 @@ void FGJSBsim::update_external_forces(double t_off)
 }
 void FGJSBsim::set_roll_pitch_yaw(double roll_rad, double pitch_rad, double yaw_rad)
 {
-    JSBSim::FGQuaternion quat(roll_rad, pitch_rad, yaw_rad);
-    auto vstate = Propagate->GetVState();
-    vstate.qAttitudeLocal = quat;
-    Propagate->SetVState(vstate);
+    // Euler angles -> local-to-body quaternion (phi, theta, psi).
+    JSBSim::FGQuaternion qLocal(roll_rad, pitch_rad, yaw_rad);
+    // Convert to ECI via the current local frame, mirroring FGPropagate's IC
+    // (FGPropagate.cpp: qAttitudeECI = Ti2l.GetQuaternion() * qAttitudeLocal).
+    // SetInertialOrientation rebuilds Tl2b/Tb2l and qAttitudeLocal coherently;
+    // setting qAttitudeLocal alone via SetVState does not stick (it is derived
+    // from qAttitudeECI there).
+    Propagate->SetInertialOrientation(Propagate->GetTi2l().GetQuaternion() * qLocal);
 }
 
 void FGJSBsim::update()
@@ -1813,11 +1809,10 @@ void FGJSBsim::set_current_state_body_axis(
     Propagate->SetPQR(2, omegaz);
     Propagate->SetPQR(3, -omegay);
 
-    // Attitude quaternion and Euler angles
+    // Attitude quaternion and Euler angles. This sets qAttitudeLocal and the
+    // body transforms; the attitude/* properties are tied to Propagate getters
+    // and report from it, so no manual property writes are needed here.
     set_roll_pitch_yaw(roll, pitch, yaw);
-    fgSetDouble("/fdm/jsbsim/attitude/phi-rad", roll);
-    fgSetDouble("/fdm/jsbsim/attitude/psi-rad", yaw);
-    fgSetDouble("/fdm/jsbsim/attitude/theta-deg", pitch * RADIANS_TO_DEGREES);
 
     // Alpha/beta rates - Auxiliary::Run() zeros adot/bdot then recomputes
     // from in.vUVWdot (which is stale in DCS mode). We compute from
