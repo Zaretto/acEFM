@@ -497,6 +497,15 @@ fgSetDouble("/position/altitude-ft",10000);
         }
     }
 
+    // External-integration mode: DCS owns state propagation and ground contact,
+    // so disable those two models for the run loop (after RunIC has primed the
+    // initial state). Every other model runs in stock order via the normal Run().
+    // Winds runs too -- the DCS wind is fed to FGWinds as NED in
+    // set_current_state_body_axis -- so force turbulence off; DCS provides gusts.
+    Propagate->SetEnabled(false);
+    GroundReactions->SetEnabled(false);
+    Winds->SetTurbType(JSBSim::FGWinds::ttNone);
+
     //if (needTrim) {
     //    const FGLocation& cart = fgic->GetPosition();
     //    double contact[3], d[3], vel[3];
@@ -583,23 +592,27 @@ void FGJSBsim::unbind()
 
 /******************************************************************************/
 
-// Models to run in DCS mode: everything except Propagate, Inertial, Winds, BuoyantForces.
-// Atmosphere runs but uses atmosphere/override/* properties for DCS-provided values.
-// Auxiliary runs normally via LoadInputs, computing qbar/Mach/Vcas/etc from correct inputs.
-static const std::vector<int> dcsModels = {
-    JSBSim::FGFDMExec::eAtmosphere,
-    JSBSim::FGFDMExec::eInput,
-    JSBSim::FGFDMExec::eSystems,
-    JSBSim::FGFDMExec::eMassBalance,
-    JSBSim::FGFDMExec::eAuxiliary,
-    JSBSim::FGFDMExec::ePropulsion,
-    JSBSim::FGFDMExec::eAerodynamics,
-    JSBSim::FGFDMExec::eGroundReactions,
-    JSBSim::FGFDMExec::eExternalReactions,
-    JSBSim::FGFDMExec::eAircraft,
-    JSBSim::FGFDMExec::eAccelerations,
-    JSBSim::FGFDMExec::eOutput,
-};
+// DCS mode now runs the full stock model schedule via FGFDMExec::Run(); the two
+// models DCS supersedes -- Propagate (state integration) and GroundReactions
+// (ground contact) -- are disabled once at init via FGModel::SetEnabled(false).
+// See FGJSBsim::initialize().
+//enum eModels { ePropagate = 0,
+//               eInput,
+//               eInertial,
+//               eAtmosphere,
+//               eWinds,
+//               eSystems,
+//               eMassBalance,
+//               eAuxiliary,
+//               ePropulsion,
+//               eAerodynamics,
+//               eGroundReactions,
+//               eExternalReactions,
+//               eBuoyantForces,
+//               eAircraft,
+//               eAccelerations,
+//               eOutput,
+//               eNumStandardModels };
 
 // Run an iteration of the EOM (equations of motion)
 void FGJSBsim::update(double dt)
@@ -611,11 +624,10 @@ void FGJSBsim::update(double dt)
     }
     fdmex->Setdt(dt);
 
-    // DCS mode: run selected models only.
-    // Propagate is skipped (DCS owns position/velocity integration).
-    // Atmosphere runs with override properties providing DCS values.
-    // Auxiliary runs via LoadInputs, correctly computing all derived quantities.
-    bool success = fdmex->Run(dcsModels);
+    // Run the full stock model schedule. Propagate and GroundReactions are
+    // disabled (see initialize()), so DCS-owned state and ground contact are not
+    // overwritten; every other model runs normally in canonical order.
+    bool success = fdmex->Run();
 
     // Apply alpha/beta rates AFTER Run, because Auxiliary::Run() zeros
     // adot/bdot and recomputes from in.vUVWdot (stale in DCS mode).
@@ -1793,14 +1805,13 @@ void FGJSBsim::set_current_state_body_axis(
     double ro_kgm3
 )
 {
-    // Inject aero velocity into Propagate (body velocity minus wind).
-    // LoadInputs(eAuxiliary) reads Propagate->GetUVW() into Auxiliary->in.vUVW,
-    // and Auxiliary::Run() computes vAeroUVW = in.vUVW - wind. With Winds model
-    // not running (TotalWindNED=0), vAeroUVW = in.vUVW directly.
+    // Inject ground-relative body velocity into Propagate. FGWinds runs as a
+    // normal model: the DCS wind is fed to it as NED below (once the attitude is
+    // set), and Auxiliary::Run() then computes vAeroUVW = in.vUVW - Tl2b*windNED.
     // DCS axes: X forward, Y up, Z right  →  JSBSim: X forward, Y right, Z down
-    Propagate->SetUVW(1, (vx - wind_vx) * METER_TO_FEET_FACTOR);
-    Propagate->SetUVW(2, (vz - wind_vz) * METER_TO_FEET_FACTOR);
-    Propagate->SetUVW(3, -(vy - wind_vy) * METER_TO_FEET_FACTOR);
+    Propagate->SetUVW(1, vx * METER_TO_FEET_FACTOR);
+    Propagate->SetUVW(2, vz * METER_TO_FEET_FACTOR);
+    Propagate->SetUVW(3, -vy * METER_TO_FEET_FACTOR);
 
     // Angular rates in JSBSim body frame
     // DCS: omegax=roll, omegay=yaw(Y+up), omegaz=pitch
@@ -1813,6 +1824,15 @@ void FGJSBsim::set_current_state_body_axis(
     // body transforms; the attitude/* properties are tied to Propagate getters
     // and report from it, so no manual property writes are needed here.
     set_roll_pitch_yaw(roll, pitch, yaw);
+
+    // Feed DCS wind (body axes) to FGWinds as NED, using the attitude just set.
+    // FGWinds::Run() publishes it as TotalWindNED (turbulence disabled at init),
+    // and Auxiliary subtracts it from the ground-relative velocity to recover the
+    // aero-relative velocity:  windNED = Tb2l * windBody.
+    JSBSim::FGColumnVector3 windBody( wind_vx * METER_TO_FEET_FACTOR,
+                                      wind_vz * METER_TO_FEET_FACTOR,
+                                     -wind_vy * METER_TO_FEET_FACTOR );
+    Winds->SetWindNED(Propagate->GetTb2l() * windBody);
 
     // Alpha/beta rates - Auxiliary::Run() zeros adot/bdot then recomputes
     // from in.vUVWdot (which is stale in DCS mode). We compute from
