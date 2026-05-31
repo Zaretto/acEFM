@@ -44,6 +44,32 @@
 
 using namespace JSBSim;
 
+#if defined(ACEFM_PROFILE)
+#include <chrono>
+// JSBSim step-throughput profiler (compile-time opt-in: define ACEFM_PROFILE).
+// Accumulates the wall-clock cost of each fdmex->Run() and reports
+// microseconds-per-step and the implied maximum rate once per second.
+// Originally lived in JSBSim (print_time / REPORT_FRAME_RATE); moved here so
+// JSBSim stays clean. steady_clock is monotonic and portable.
+static void acefm_profile_step(std::chrono::steady_clock::duration step)
+{
+    using namespace std::chrono;
+    static steady_clock::time_point window = steady_clock::now();
+    static long long ns = 0;
+    static unsigned long frames = 0;
+    ns += duration_cast<nanoseconds>(step).count();
+    ++frames;
+    if (steady_clock::now() - window >= seconds(1) && frames) {
+        double us = (ns / 1000.0) / frames;
+        printf("[acEFM] JSBSim step: %.2f us/step  (%.0f Hz max)  over %lu frames\n",
+               us, 1.0e6 / us, frames);
+        window = steady_clock::now();
+        ns = 0;
+        frames = 0;
+    }
+}
+#endif
+
 static inline double
 FMAX(double a, double b)
 {
@@ -627,7 +653,13 @@ void FGJSBsim::update(double dt)
     // Run the full stock model schedule. Propagate and GroundReactions are
     // disabled (see initialize()), so DCS-owned state and ground contact are not
     // overwritten; every other model runs normally in canonical order.
+#if defined(ACEFM_PROFILE)
+    auto _run_t0 = std::chrono::steady_clock::now();
+#endif
     bool success = fdmex->Run();
+#if defined(ACEFM_PROFILE)
+    acefm_profile_step(std::chrono::steady_clock::now() - _run_t0);
+#endif
 
     // Apply alpha/beta rates AFTER Run, because Auxiliary::Run() zeros
     // adot/bdot and recomputes from in.vUVWdot (stale in DCS mode).
