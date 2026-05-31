@@ -525,11 +525,12 @@ fgSetDouble("/position/altitude-ft",10000);
 
     // External-integration mode: DCS owns state propagation and ground contact,
     // so disable those two models for the run loop (after RunIC has primed the
-    // initial state). Every other model runs in stock order via the normal Run().
-    // Winds runs too -- the DCS wind is fed to FGWinds as NED in
-    // set_current_state_body_axis -- so force turbulence off; DCS provides gusts.
-    Propagate->SetEnabled(false);
-    GroundReactions->SetEnabled(false);
+    // initial state) via their enable properties. Every other model runs in
+    // stock order via the normal Run(). Winds runs too -- the DCS wind is fed to
+    // FGWinds as NED in set_current_state_body_axis -- so force turbulence off;
+    // DCS provides gusts.
+    fgSetBool("/fdm/jsbsim/simulation/models/propagate/enabled", false);
+    fgSetBool("/fdm/jsbsim/simulation/models/groundreactions/enabled", false);
     Winds->SetTurbType(JSBSim::FGWinds::ttNone);
 
     //if (needTrim) {
@@ -620,8 +621,8 @@ void FGJSBsim::unbind()
 
 // DCS mode now runs the full stock model schedule via FGFDMExec::Run(); the two
 // models DCS supersedes -- Propagate (state integration) and GroundReactions
-// (ground contact) -- are disabled once at init via FGModel::SetEnabled(false).
-// See FGJSBsim::initialize().
+// (ground contact) -- are disabled once at init via their
+// simulation/models/<name>/enabled properties. See FGJSBsim::initialize().
 //enum eModels { ePropagate = 0,
 //               eInput,
 //               eInertial,
