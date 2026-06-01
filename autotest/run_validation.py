@@ -2,18 +2,22 @@
 """
 aceFM QTG-Style Validation Runner
 
-Runs JSBSim autotest scripts via TestPlane.exe, compares output CSVs against
+Runs JSBSim autotest scripts via JSBSim.exe, compares output CSVs against
 baseline data in a validation package, and reports pass/fail per-property
 using tolerances defined in validation-package/tolerances.xml.
 
 Adapted from JSBSim's check_cases pattern (JSBSim_utils.py).
 
 Usage:
-    # Run all tests (TestPlane.exe found via PATH)
+    # Run all tests (JSBSim.exe found via the build tree or PATH)
     python run_validation.py --aircraft path/to/AircraftMod
 
-    # Run all tests with explicit TestPlane.exe path
-    python run_validation.py --testplane path/to/TestPlane.exe --aircraft path/to/AircraftMod
+    # Run all tests with an explicit JSBSim.exe path
+    python run_validation.py --jsbsim path/to/JSBSim.exe --aircraft path/to/AircraftMod
+
+    # FlightGear path layout, or the bridge model set
+    python run_validation.py --aircraft path/to/AircraftMod --mode fg
+    python run_validation.py --aircraft path/to/AircraftMod --mode bridge
 
     # Run a specific test
     python run_validation.py --aircraft path/to/AircraftMod level_accel
@@ -422,16 +426,71 @@ def parse_autotest_config(autotest_xml_path, tolerances_path):
     return paths, tests, group_metadata, suite_metadata
 
 
-def run_test(testplane_exe, aircraft_dir, script_path, fg=False):
-    """Run a test via TestPlane.exe and return (returncode, stdout, stderr).
+# Path conventions for a script run, expressed as JSBSim command-line options.
+# These were previously baked into TestPlane's test / test-fg / bridge-test
+# modes; they live here now so the runner drives stock JSBSim.exe directly.
+_PATH_CONVENTIONS = {
+    "dcs": ["--root=.", "--aircraft-path=EFM", "--engine-path=EFM/Engines",
+            "--systems-path=EFM/Systems", "--init-path=autotest/init"],
+    "fg": ["--root=.", "--aircraft-path=.", "--engine-path=Engines",
+           "--systems-path=Systems", "--init-path=autotest/init"],
+    "bridge": ["--root=.", "--aircraft-path=EFM", "--engine-path=EFM/Engines",
+               "--systems-path=EFM/Systems", "--init-path=autotest/init",
+               "--property=simulation/models/propagate/enabled=0",
+               "--property=simulation/models/groundreactions/enabled=0"],
+}
 
-    Return codes from TestPlane.exe:
-        0  — simulation completed, all checks passed (or no checks)
-        1  — simulation completed, one or more checks failed
-        -1 — configuration/loading error
+
+def resolve_jsbsim_exe(args):
+    """Locate the standalone JSBSim.exe script runner.
+
+    Resolution order, first existing wins: --jsbsim, JSBSIM_EXE, alongside
+    --testplane, the local CMake build tree, then PATH. Exits with guidance
+    if none is found.
     """
-    mode = "test-fg" if fg else "test"
-    cmd = [str(testplane_exe), mode, str(script_path)]
+    candidates = []
+    if args.jsbsim:
+        candidates.append(Path(args.jsbsim))
+    if os.environ.get("JSBSIM_EXE"):
+        candidates.append(Path(os.environ["JSBSIM_EXE"]))
+    if args.testplane:
+        candidates.append(Path(args.testplane).resolve().parent / "JSBSim.exe")
+    repo_root = Path(__file__).resolve().parent.parent
+    for cfg in ("Release", "Debug"):
+        candidates.append(repo_root / "build" / "JSBSim" / "src" / cfg / "JSBSim.exe")
+
+    for c in candidates:
+        if c and c.is_file():
+            return c.resolve()
+
+    found = shutil.which("JSBSim") or shutil.which("JSBSim-bin")
+    if found:
+        return Path(found).resolve()
+
+    tried = "\n  ".join(str(c) for c in candidates) or "(none)"
+    print("ERROR: JSBSim.exe not found. Tried:\n  " + tried +
+          "\nSpecify with --jsbsim or set JSBSIM_EXE.")
+    sys.exit(2)
+
+
+def run_test(jsbsim_exe, aircraft_dir, script_path, mode="dcs"):
+    """Run a script test via JSBSim.exe and return (returncode, stdout, stderr).
+
+    mode selects the path convention and model set:
+        dcs    — DCS mod layout (EFM/, EFM/Engines, EFM/Systems)
+        fg     — FlightGear layout (., Engines, Systems)
+        bridge — DCS layout with Propagate and GroundReactions disabled,
+                 reproducing the model set the EFM bridge runs.
+
+    Check failures are reported by JSBSim on stdout and detected by the
+    caller's parse; they do not necessarily set a non-zero return code.
+    """
+    conv = _PATH_CONVENTIONS.get(mode)
+    if conv is None:
+        return -1, "", f"unknown mode '{mode}'"
+    cmd = [str(jsbsim_exe), f"--script={script_path}"] + conv
+    env = dict(os.environ)
+    env.setdefault("JSBSIM_DEBUG", "0")
     try:
         result = subprocess.run(
             cmd,
@@ -439,12 +498,13 @@ def run_test(testplane_exe, aircraft_dir, script_path, fg=False):
             capture_output=True,
             text=True,
             timeout=300,
+            env=env,
         )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
-        return -1, "", "TestPlane.exe timed out after 300 seconds"
+        return -1, "", "JSBSim.exe timed out after 300 seconds"
     except FileNotFoundError:
-        return -1, "", f"TestPlane.exe not found at {testplane_exe}"
+        return -1, "", f"JSBSim.exe not found at {jsbsim_exe}"
 
 
 def check_property(output_col, baseline_col, tol_spec):
@@ -1589,9 +1649,23 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument(
+        "--jsbsim",
+        default=None,
+        help="Path to JSBSim.exe (if omitted: JSBSIM_EXE, alongside "
+             "--testplane, the local build tree, then PATH)",
+    )
+    parser.add_argument(
         "--testplane",
         default=None,
-        help="Path to TestPlane.exe (if omitted, found via PATH)",
+        help="Path to TestPlane.exe; used only as a hint for locating "
+             "JSBSim.exe in the same directory",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("dcs", "fg", "bridge"),
+        default="dcs",
+        help="Path convention: dcs (EFM layout), fg (FlightGear layout), or "
+             "bridge (dcs with Propagate and GroundReactions disabled)",
     )
     parser.add_argument(
         "--aircraft",
@@ -1622,23 +1696,14 @@ def main():
 
     args = parser.parse_args()
 
-    if args.testplane:
-        testplane_exe = Path(args.testplane).resolve()
-    else:
-        testplane_exe = shutil.which("TestPlane.exe") or shutil.which("TestPlane")
-        if testplane_exe:
-            testplane_exe = Path(testplane_exe).resolve()
-        else:
-            print("ERROR: TestPlane.exe not found on PATH. Specify with --testplane.")
-            sys.exit(2)
+    jsbsim_exe = resolve_jsbsim_exe(args)
+    mode = "fg" if args.fg else args.mode
     aircraft_dir = Path(args.aircraft).resolve()
 
-    if not testplane_exe.exists():
-        print(f"ERROR: TestPlane.exe not found at {testplane_exe}")
-        sys.exit(2)
     if not aircraft_dir.is_dir():
         print(f"ERROR: Aircraft directory not found at {aircraft_dir}")
         sys.exit(2)
+    print(f"Using JSBSim: {jsbsim_exe}  (mode: {mode})")
 
     tolerances_path = aircraft_dir / "autotest" / "validation-package" / "tolerances.xml"
     autotest_xml_path = aircraft_dir / "autotest" / "autotest.xml"
@@ -1698,7 +1763,7 @@ def main():
     for test_spec in tests:
         print(f"  Running: {test_spec.name} ({test_spec.script})...")
         script_path = "autotest/" + test_spec.script
-        returncode, stdout, stderr = run_test(testplane_exe, aircraft_dir, script_path, fg=args.fg)
+        returncode, stdout, stderr = run_test(jsbsim_exe, aircraft_dir, script_path, mode=mode)
 
         result = TestResult(test_spec)
         result.stdout = stdout
