@@ -25,6 +25,7 @@
 
 #include "../JSBSim/src/input_output/FGXMLParse.h"
 #include <input_output\FGPropertyManager.h>
+#include <input_output/FGLog.h>
 
 using std::count;
 using std::endl;
@@ -257,16 +258,13 @@ public:
                 message += '\'';
                 throw sg_io_exception(message, location);
             }
-            if (!ret)
-                SG_LOG
-                (
-                    SG_INPUT,
-                    SG_ALERT,
-                    "readProperties: Failed to set " << st.node->getPath()
+            if (!ret) {
+                JSBSim::FGLogging log(JSBSim::LogLevel::WARN);
+                log << "readProperties: Failed to set " << st.node->getPath()
                     << " to value \"" << _data
                     << "\" with type " << st.type
-                    << "\n at " << location.asString()
-                );
+                    << "\n at " << location.asString() << "\n";
+            }
         }
 
         // Set the access-mode attributes now,
@@ -295,8 +293,9 @@ public:
     }
 
     void warning(const char* message, int line, int column) {
-        SG_LOG(SG_INPUT, SG_ALERT, "readProperties: warning: "
-            << message << " at line " << line << ", column " << column);
+        JSBSim::FGLogging log(JSBSim::LogLevel::WARN);
+        log << "readProperties: warning: "
+            << message << " at line " << line << ", column " << column << "\n";
     }
 
     bool hasException() const { return _hasException; }

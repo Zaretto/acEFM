@@ -108,7 +108,7 @@
     <ExtensionsToDeleteOnClean>*.cdf;*.cache;*.obj;*.obj.enc;*.ilk;*.ipdb;*.iobj;*.resources;*.tlb;*.tli;*.tlh;*.tmp;*.rsp;*.pgc;*.pgd;*.meta;*.tlog;*.manifest;*.res;*.pch;*.exp;*.idb;*.rep;*.xdc;*.pdb;*_manifest.rc;*.bsc;*.sbr;*.xml;*.metagen;*.bi</ExtensionsToDeleteOnClean>
     <TargetName>acEFM</TargetName>
     <IncludePath>$(MSBuildProjectDirect)..\;$(MSBuildProjectDirect)..\JSBSim\src\;$(VC_IncludePath);$(WindowsSDK_IncludePath)</IncludePath>
-    <LibraryPath>..\Debug\x64\;$(LibraryPath)</LibraryPath>
+    <LibraryPath>..\build\JSBSim\src\Debug\;..\Debug\x64\;$(LibraryPath)</LibraryPath>
     <IntDir>..\Debug\x64\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -126,7 +126,7 @@
     <ExtensionsToDeleteOnClean>*.cdf;*.cache;*.obj;*.obj.enc;*.ilk;*.ipdb;*.iobj;*.resources;*.tlb;*.tli;*.tlh;*.tmp;*.rsp;*.pgc;*.pgd;*.meta;*.tlog;*.manifest;*.res;*.pch;*.exp;*.idb;*.rep;*.xdc;*.pdb;*_manifest.rc;*.bsc;*.sbr;*.xml;*.metagen;*.bi</ExtensionsToDeleteOnClean>
     <TargetName>acEFM</TargetName>
     <IncludePath>$(MSBuildProjectDirect)..\;$(MSBuildProjectDirect)..\JSBSim\src\;$(VC_IncludePath);$(WindowsSDK_IncludePath)</IncludePath>
-    <LibraryPath>..\release\x64\;$(LibraryPath)</LibraryPath>
+    <LibraryPath>..\build\JSBSim\src\Release\;..\release\x64\;$(LibraryPath)</LibraryPath>
     <OutDir>..\release\x64\</OutDir>
     <IntDir>..\release\x64\$(ProjectName)\</IntDir>
   </PropertyGroup>
@@ -135,7 +135,7 @@
     <ExtensionsToDeleteOnClean>*.cdf;*.cache;*.obj;*.obj.enc;*.ilk;*.ipdb;*.iobj;*.resources;*.tlb;*.tli;*.tlh;*.tmp;*.rsp;*.pgc;*.pgd;*.meta;*.tlog;*.manifest;*.res;*.pch;*.exp;*.idb;*.rep;*.xdc;*.pdb;*_manifest.rc;*.bsc;*.sbr;*.xml;*.metagen;*.bi</ExtensionsToDeleteOnClean>
     <TargetName>acEFM</TargetName>
     <IncludePath>$(MSBuildProjectDirect)..\;$(MSBuildProjectDirect)..\JSBSim\src\;$(VC_IncludePath);$(WindowsSDK_IncludePath)</IncludePath>
-    <LibraryPath>..\release\x64\;$(LibraryPath)</LibraryPath>
+    <LibraryPath>..\build\JSBSim\src\Release\;..\release\x64\;$(LibraryPath)</LibraryPath>
     <OutDir>..\release\x64\</OutDir>
     <IntDir>..\release\x64\$(ProjectName)\</IntDir>
   </PropertyGroup>
@@ -284,8 +284,8 @@
     <ResourceCompile Include="flyt.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\JSBSim\JSBSim.vcxproj">
-      <Project>{af971b4f-3d53-4655-8a03-97e8054dc58b}</Project>
+    <ProjectReference Include="..\build\JSBSim\src\libJSBSim.vcxproj">
+      <Project>{657d797b-2cf3-3481-974a-4880b98fb038}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

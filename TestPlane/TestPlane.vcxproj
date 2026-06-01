@@ -289,8 +289,8 @@
     <ProjectReference Include="..\flyt-EFM-dcsJSBSim\flyt-EFM-dcsJSBSim.vcxproj">
       <Project>{30a7f19a-ed9b-4e78-99e7-c40fb579973a}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\JSBSim\JSBSim.vcxproj">
-      <Project>{af971b4f-3d53-4655-8a03-97e8054dc58b}</Project>
+    <ProjectReference Include="..\build\JSBSim\src\libJSBSim.vcxproj">
+      <Project>{657d797b-2cf3-3481-974a-4880b98fb038}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

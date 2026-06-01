@@ -7,7 +7,14 @@
 // Windows Header Files:
 #include <windows.h>
 
+// windows.h defines an ERROR macro that clashes with JSBSim's LogLevel::ERROR enumerator.
+#ifdef ERROR
+#undef ERROR
+#endif
+
 #include <iostream>
+
+#include "sg_log_compat.h"
 
 
 // TODO: reference additional headers your program requires here
