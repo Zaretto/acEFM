@@ -473,7 +473,7 @@ def resolve_jsbsim_exe(args):
     sys.exit(2)
 
 
-def run_test(jsbsim_exe, aircraft_dir, script_path, mode="dcs"):
+def run_test(jsbsim_exe, aircraft_dir, script_path, mode="dcs", verbose=0):
     """Run a script test via JSBSim.exe and return (returncode, stdout, stderr).
 
     mode selects the path convention and model set:
@@ -482,6 +482,9 @@ def run_test(jsbsim_exe, aircraft_dir, script_path, mode="dcs"):
         bridge — DCS layout with Propagate and GroundReactions disabled,
                  reproducing the model set the EFM bridge runs.
 
+    verbose >= 1 prints the JSBSim command line; verbose >= 2 also prints
+    the working directory.
+
     Check failures are reported by JSBSim on stdout and detected by the
     caller's parse; they do not necessarily set a non-zero return code.
     """
@@ -489,6 +492,10 @@ def run_test(jsbsim_exe, aircraft_dir, script_path, mode="dcs"):
     if conv is None:
         return -1, "", f"unknown mode '{mode}'"
     cmd = [str(jsbsim_exe), f"--script={script_path}"] + conv
+    if verbose >= 1:
+        print("    cmd: " + subprocess.list2cmdline(cmd))
+        if verbose >= 2:
+            print(f"    cwd: {aircraft_dir}")
     env = dict(os.environ)
     env.setdefault("JSBSIM_DEBUG", "0")
     try:
@@ -727,6 +734,17 @@ def generate_plots(aircraft_dir, tests, test_results, show=False):
 
     Returns a dict mapping test_spec.name -> list of plot file paths.
     """
+    # The first import of matplotlib initialises a backend and may rebuild the
+    # font cache — this can take many seconds (occasionally much longer) with
+    # no other output, so announce it before it happens.
+    print("  Loading plotting library (matplotlib)...")
+    import matplotlib
+    # Use the non-interactive Agg backend unless plots are shown. The default
+    # on this machine is an interactive GUI backend (tkagg) whose first import
+    # initialises Tk and rebuilds the font cache — a multi-second silent stall
+    # — and renders every figure more slowly. Agg avoids both.
+    if not show:
+        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     val_pkg_dir = Path(aircraft_dir) / "autotest" / "validation-package"
@@ -735,6 +753,18 @@ def generate_plots(aircraft_dir, tests, test_results, show=False):
     # Build a lookup from test name to its TestResult for pass/fail info
     result_map = {tr.test_spec.name: tr for tr in test_results}
     plot_paths = {}  # test_name -> [Path, ...]
+
+    # Count the output files that will actually be plotted so progress can be
+    # reported as i/N. A plot that hangs then shows exactly which one.
+    n_plots = sum(
+        1
+        for ts in tests
+        for of in ts.output_files
+        if not (result_map.get(ts.name) and result_map[ts.name].run_error)
+        and (Path(aircraft_dir) / of.output_name).exists()
+        and (val_pkg_dir / of.baseline_name).exists()
+    )
+    plot_idx = 0
 
     for test_spec in tests:
         tr = result_map.get(test_spec.name)
@@ -747,6 +777,10 @@ def generate_plots(aircraft_dir, tests, test_results, show=False):
 
             if not output_path.exists() or not baseline_path.exists():
                 continue
+
+            plot_idx += 1
+            print(f"  Plotting [{plot_idx}/{n_plots}]: {test_spec.name} "
+                  f"({Path(of_spec.baseline_name).stem})...")
 
             try:
                 output_df = pd.read_csv(output_path)
@@ -764,8 +798,20 @@ def generate_plots(aircraft_dir, tests, test_results, show=False):
             time_out = output_df[time_col] if time_col else output_df.index
             time_base = baseline_df[time_col] if time_col else baseline_df.index
 
-            # Collect data columns (skip time)
-            data_cols = [c for c in output_df.columns if c != time_col]
+            # Collect data columns common to both (skip time). Output and
+            # baseline can diverge when the output directive gains or loses a
+            # property after the baseline was promoted; plotting a column the
+            # baseline lacks would raise KeyError and abort the whole run, so
+            # restrict to the intersection and note any dropped columns.
+            base_cols = set(baseline_df.columns)
+            data_cols = [c for c in output_df.columns
+                         if c != time_col and c in base_cols]
+            dropped = [c for c in output_df.columns
+                       if c != time_col and c not in base_cols]
+            if dropped:
+                print(f"  NOTE: {test_spec.name}: {len(dropped)} column(s) "
+                      f"not in baseline, omitted from plot: "
+                      + ", ".join(strip_jsbsim_prefix(c) for c in dropped))
             if not data_cols:
                 continue
 
@@ -1643,6 +1689,16 @@ def promote_baselines(aircraft_dir, tests, test_filter=None):
 
 
 def main():
+    # Stream progress line-by-line even when stdout is redirected or piped
+    # (e.g. run from a .bat with output captured, or from an IDE). Without
+    # this, Python block-buffers non-tty stdout and the per-test progress is
+    # withheld in ~8KB chunks, so a run that is working looks frozen.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
+
     parser = argparse.ArgumentParser(
         description="aceFM QTG-Style Validation Runner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1688,6 +1744,15 @@ def main():
         help="Use test-fg mode (FlightGear atmosphere) instead of test",
     )
     parser.add_argument(
+        "-v", "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity (repeatable). -v shows the JSBSim command "
+             "line for each test; -vv adds the working directory, return "
+             "code, stderr and resolved output/baseline paths; -vvv adds "
+             "the full JSBSim stdout.",
+    )
+    parser.add_argument(
         "test_name",
         nargs="?",
         default=None,
@@ -1716,9 +1781,11 @@ def main():
             print(f"ERROR: Tolerances file not found at {tolerances_path}")
             sys.exit(2)
         print(f"Using autotest.xml configuration: {autotest_xml_path}")
+        print("Parsing test configuration and tolerances...")
         _, tests, group_metadata, suite_metadata = parse_autotest_config(autotest_xml_path, tolerances_path)
     elif tolerances_path.exists():
         print(f"Using legacy tolerances.xml configuration: {tolerances_path}")
+        print("Parsing tolerances...")
         tests = parse_tolerances_legacy(tolerances_path)
     else:
         print(f"ERROR: Neither autotest.xml nor tolerances.xml found")
@@ -1759,15 +1826,31 @@ def main():
     print(f"Running {len(tests)} test(s) for {aircraft_name}...")
     print()
 
+    n_tests = len(tests)
     test_results = []
-    for test_spec in tests:
-        print(f"  Running: {test_spec.name} ({test_spec.script})...")
+    for idx, test_spec in enumerate(tests, 1):
+        print(f"  [{idx}/{n_tests}] Running: {test_spec.name} "
+              f"({test_spec.script}) -- invoking JSBSim (timeout 300s)...")
         script_path = "autotest/" + test_spec.script
-        returncode, stdout, stderr = run_test(jsbsim_exe, aircraft_dir, script_path, mode=mode)
+        returncode, stdout, stderr = run_test(
+            jsbsim_exe, aircraft_dir, script_path, mode=mode,
+            verbose=args.verbose,
+        )
 
         result = TestResult(test_spec)
         result.stdout = stdout
         result.run_return_code = returncode
+
+        if args.verbose >= 2:
+            print(f"    return code: {returncode}")
+            if stderr.strip():
+                print("    stderr:")
+                for line in stderr.rstrip().splitlines():
+                    print(f"      {line}")
+        if args.verbose >= 3:
+            print("    stdout:")
+            for line in stdout.rstrip().splitlines():
+                print(f"      {line}")
 
         if returncode < 0:
             result.run_error = f"TestPlane.exe failed: {stderr.strip()[:200]}"
@@ -1804,6 +1887,10 @@ def main():
         for of_spec in test_spec.output_files:
             output_path = aircraft_dir / of_spec.output_name
             baseline_path = val_pkg_dir / of_spec.baseline_name
+
+            if args.verbose >= 2:
+                print(f"    output:   {output_path}")
+                print(f"    baseline: {baseline_path}")
 
             if not output_path.exists():
                 result.run_error = f"Output file not found: {output_path}"
@@ -1852,12 +1939,16 @@ def main():
 
     if not args.test_name:
         if xml_reports:
+            print()
+            print("Generating XML summary...")
             generate_xml_summary(
                 aircraft_dir, aircraft_name, tests, test_results,
                 xml_reports, group_metadata, suite_metadata
             )
 
     # Generate report
+    print()
+    print("Generating text report...")
     report = format_report(test_results, aircraft_name)
     print()
     print(report)
