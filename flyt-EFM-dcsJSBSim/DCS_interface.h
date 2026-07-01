@@ -588,6 +588,7 @@ public:
         }
         node->setDoubleValue(out);
     }
+    double Readback() const { return node ? node->getDoubleValue() : 0.0; }
 };
 
 class CommandMap
@@ -596,22 +597,48 @@ class CommandMap
     SGPropertyNode* DebugNode = nullptr;
 
 public:
+    struct RegistryEntry {
+        int         icommand;
+        std::string name;
+        bool        is_discrete;
+        float       discrete_value;
+        float       clip_min;
+        float       clip_max;
+        std::string prop;
+    };
+    std::vector<RegistryEntry> registry;
+
     void Init(FGJSBsim* model)
     {
         DebugNode = model->PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-commands", true);
     }
-    void AddItem(FGJSBsim* model, int command, const std::string& prop,
+    void AddItem(FGJSBsim* model, int command, const std::string& display_name,
+                 const std::string& prop,
                  double factor, double offset, double clipMin, double clipMax,
                  bool hasFixedValue, double fixedValue)
     {
         if (hasFixedValue)
-            printf("Command:: %d -> %s = %.3f\n", command, prop.c_str(), fixedValue);
+            printf("Command:: %d (%s) -> %s = %.3f\n", command, display_name.c_str(), prop.c_str(), fixedValue);
         else
-            printf("Command:: %d -> %s (x%.3f +%.3f clip[%.3g,%.3g])\n",
-                   command, prop.c_str(), factor, offset, clipMin, clipMax);
+            printf("Command:: %d (%s) -> %s (x%.3f +%.3f clip[%.3g,%.3g])\n",
+                   command, display_name.c_str(), prop.c_str(), factor, offset, clipMin, clipMax);
         items.emplace(command, CommandItem(model, command, prop, factor, offset,
                                            clipMin, clipMax, hasFixedValue, fixedValue));
+        // Record for instruments enumeration; deduplicate by icommand (first binding wins for display)
+        for (auto& e : registry) { if (e.icommand == command) return; }
+        registry.push_back({
+            command, display_name, hasFixedValue, (float)fixedValue,
+            (clipMin > -1e15) ? (float)clipMin : -1.0f,
+            (clipMax <  1e15) ? (float)clipMax :  1.0f,
+            prop
+        });
     }
+    const std::vector<RegistryEntry>& GetRegistry() const { return registry; }
+    double Readback(int icommand) const {
+        auto it = items.find(icommand);
+        return (it != items.end()) ? it->second.Readback() : 0.0;
+    }
+
     // Apply every binding registered for this command.  Returns true if at
     // least one binding handled it.
     bool Handle(int command, float value) const
@@ -678,10 +705,12 @@ public:
 class DCS_interface
 {
 public:
+    FGJSBsim* model = nullptr;
     Cockpit cockpit;
     DrawArguments drawArguments;
     CommandMap commands;
     ParamMap params;
+    SGPropertyNode_ptr cabin_altitude_node; // path from <sim><ecs><cabin-altitude-ft>; null = unpressurised
 
     DCS_interface();
     ~DCS_interface();

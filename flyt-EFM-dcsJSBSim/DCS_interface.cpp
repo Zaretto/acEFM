@@ -222,8 +222,8 @@ static std::map<std::string, double> conversion_map = {
 // aircraft-specific <param> overrides already registered by AddItem() take
 // priority (AddDefault skips indices that are already present).
 //
-// Engine count comes from <sim><engine-count> in aceFMconfig.xml; if absent
-// or zero, falls back to however many engines JSBSim loaded.
+// Engine count from <sim><engine-count> in aceFMconfig.xml; if absent or zero,
+// falls back to however many engines JSBSim loaded.
 //
 // Default mappings (override per-aircraft via <params> in aceFMconfig.xml):
 //   RPM              -> n1  (LP/fan spool %)      factor 1
@@ -235,6 +235,26 @@ static std::map<std::string, double> conversion_map = {
 //   OIL_PRESSURE     -> oil-pressure-psi           factor 1
 //   FUEL_FLOW        -> fuel-flow-rate-pps          factor 1
 //   COMBUSTION       -> running                     factor 1
+static void RegisterEngineDefaults(FGJSBsim* model, ParamMap& params, int engineCount)
+{
+    static const unsigned BLOCK = ED_FM_ENGINE_1_RPM - ED_FM_ENGINE_0_RPM;
+    printf("acEFM: RegisterEngineDefaults for %d engine(s)\n", engineCount);
+    for (int jsb = 0; jsb < engineCount; jsb++) {
+        unsigned base = (unsigned)(jsb + 1) * BLOCK; // DCS engine jsb+1 (0 = APU)
+        std::string p = "/fdm/jsbsim/propulsion/engine[" + std::to_string(jsb) + "]/";
+
+        params.AddDefault(model, base + ED_FM_ENGINE_0_RPM,              p + "n1",                  1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_RELATED_RPM,      p + "n2",                  0.01);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_CORE_RPM,         p + "n2",                  1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_CORE_RELATED_RPM, p + "n2",                  0.01);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_THRUST,           p + "thrust-lbs",          LBS_TO_N);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_TEMPERATURE,      p + "egt-degc",            1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_OIL_PRESSURE,     p + "oil-pressure-psi",    1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_FUEL_FLOW,        p + "fuel-flow-rate-pps",  1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_COMBUSTION,       p + "running",             1.0);
+    }
+}
+
 // Build default ed_fm_get_param bindings for N gear units using standard
 // JSBSim gear property paths.  Called after XML <params> so aircraft overrides win.
 //
@@ -263,28 +283,9 @@ static void RegisterGearDefaults(FGJSBsim* model, ParamMap& params, int gearCoun
     }
 }
 
-static void RegisterEngineDefaults(FGJSBsim* model, ParamMap& params, int engineCount)
-{
-    static const unsigned BLOCK = ED_FM_ENGINE_1_RPM - ED_FM_ENGINE_0_RPM;
-    printf("acEFM: RegisterEngineDefaults for %d engine(s)\n", engineCount);
-    for (int jsb = 0; jsb < engineCount; jsb++) {
-        unsigned base = (unsigned)(jsb + 1) * BLOCK; // DCS engine jsb+1 (0 = APU)
-        std::string p = "/fdm/jsbsim/propulsion/engine[" + std::to_string(jsb) + "]/";
-
-        params.AddDefault(model, base + ED_FM_ENGINE_0_RPM,              p + "n1",                  1.0);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_RELATED_RPM,      p + "n2",                  0.01);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_CORE_RPM,         p + "n2",                  1.0);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_CORE_RELATED_RPM, p + "n2",                  0.01);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_THRUST,           p + "thrust-lbs",          LBS_TO_N);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_TEMPERATURE,      p + "egt-degc",            1.0);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_OIL_PRESSURE,     p + "oil-pressure-psi",    1.0);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_FUEL_FLOW,        p + "fuel-flow-rate-pps",  1.0);
-        params.AddDefault(model, base + ED_FM_ENGINE_0_COMBUSTION,       p + "running",             1.0);
-    }
-}
-
 void DCS_interface::initialize(FGJSBsim * _model)
 {
+    model = _model;
     printf("acEFM: DCS_interface Initialize\n");
 
     auto drawArgNode = _model->PropertyManager->GetNode("sim/animations");
@@ -336,6 +337,15 @@ void DCS_interface::initialize(FGJSBsim * _model)
                         ? (int)gcNode->getDoubleValue()
                         : 3;
         RegisterGearDefaults(_model, params, gearCount);
+    }
+
+    {
+        auto ecsNode = _model->PropertyManager->GetNode("sim/ecs");
+        if (ecsNode) {
+            std::string path = ecsNode->getStringValue("cabin-altitude-ft");
+            if (!path.empty())
+                cabin_altitude_node = _model->PropertyManager->GetNode(path);
+        }
     }
 
     auto cockpitNode = _model->PropertyManager->GetNode("sim/cockpit");
@@ -411,16 +421,18 @@ void DCS_interface::initialize(FGJSBsim * _model)
             // Command may be given numerically (<icommand>) or by symbolic name
             // (<name>, e.g. iCommandPlaneFlapsOn) resolved via iCommands.h.
             int icmd = cmd->getIntValue("icommand", -1);
+            std::string display_name = cmd->getStringValue("name");
             if (icmd < 0) {
-                auto name = cmd->getStringValue("name");
-                if (name != std::string())
-                    icmd = DCS::iCommandFromName(name);
+                if (!display_name.empty())
+                    icmd = DCS::iCommandFromName(display_name);
             }
             if (icmd < 0) {
                 SG_LOG(SG_FLIGHT, SG_ALERT,
                        "Command binding requires a valid <icommand> or <name>");
                 continue;
             }
+            if (display_name.empty())
+                display_name = std::to_string(icmd);
 
             auto prop = cmd->getStringValue("property");
             if (prop == std::string()) {
@@ -449,7 +461,7 @@ void DCS_interface::initialize(FGJSBsim * _model)
             bool   hasFixedValue = cmd->hasChild("value");
             double fixedValue    = cmd->getDoubleValue("value", 0.0);
 
-            commands.AddItem(_model, icmd, prop, factor, offset, clipMin, clipMax,
+            commands.AddItem(_model, icmd, display_name, prop, factor, offset, clipMin, clipMax,
                              hasFixedValue, fixedValue);
         }
     }
@@ -526,165 +538,59 @@ void DCS_interface::simulate(double dt)
 
 double ed_fm_get_param(unsigned index)
 {
-    FGJSBsim* model = get_model();
-
-    double paramValue;
-    if (get_dcs_interface()->params.TryGet(index, paramValue))
-        return paramValue;
-
-    if (index < ED_FM_END_ENGINE_BLOCK) {
-        // engine block: each DCS engine occupies a block of 100 indices
-        // DCS engine 0 = APU, DCS engine N (N>=1) = JSBSim engine[N-1]
-        static const unsigned ENGINE_BLOCK_SIZE = ED_FM_ENGINE_1_RPM - ED_FM_ENGINE_0_RPM;
-        unsigned dcs_engine  = index / ENGINE_BLOCK_SIZE;
-        unsigned param_offset = index % ENGINE_BLOCK_SIZE;
-
-        if (dcs_engine == 0)
-            return 0; // APU - not modelled
-
-        int jsb_engine = (int)dcs_engine - 1;
-        if (jsb_engine >= (int)model->Propulsion->GetNumEngines())
-            return 0;
-
-        // build property path for this JSBSim engine
-        std::string eng_prefix = "/fdm/jsbsim/propulsion/engine[" + std::to_string(jsb_engine) + "]/";
-
-        switch (param_offset) {
-        case ED_FM_ENGINE_0_RPM:            // offset 0: RPM
-            return model->fgGetDouble((eng_prefix + "n1").c_str()) * 120;
-        case ED_FM_ENGINE_0_RELATED_RPM:    // offset 1: related RPM (N2 as 0-1)
-            return model->fgGetDouble((eng_prefix + "n2").c_str());
-        case ED_FM_ENGINE_0_THRUST:         // offset 4: thrust in N
-            return model->fgGetDouble((eng_prefix + "thrust-lbs").c_str()) * LBS_TO_N;
-        case ED_FM_ENGINE_0_RELATED_THRUST: // offset 5
-            return 0;
-        case ED_FM_ENGINE_0_FUEL_FLOW:      // offset 14
-            return model->fgGetDouble((eng_prefix + "fuel-flow-rate-pps").c_str());
-        default:
-            return 0;
+    DCS_interface* dcs = get_dcs_interface();
+    double paramValue = 0;
+    if (!dcs->params.TryGet(index, paramValue)) {
+        if (index == ED_FM_COCKPIT_PRESSURIZATION_OVER_EXTERNAL) {
+            if (!dcs->cabin_altitude_node) return 0;
+            double cabin_alt = dcs->cabin_altitude_node->getDoubleValue();
+            double cabin_pressure = dcs->model->get_pressure_at_atltiude_lbf_ft2(cabin_alt);
+            return (cabin_pressure - dcs->model->get_atmosphere_pressure_lbf_ft2()) / PA_TO_LBF_FT2;
         }
-    } else if (index >= ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT &&
-               index < ED_FM_OXYGEN_SUPPLY) {
-        // gear/suspension block
-        switch (index) {
-        case ED_FM_SUSPENSION_0_GEAR_POST_STATE:
-        case ED_FM_SUSPENSION_0_DOWN_LOCK:
-        case ED_FM_SUSPENSION_0_UP_LOCK:
-            return model->fgGetDouble("/fdm/jsbsim/gear/unit[0]/pos-norm");
-        case ED_FM_SUSPENSION_1_GEAR_POST_STATE:
-        case ED_FM_SUSPENSION_1_DOWN_LOCK:
-        case ED_FM_SUSPENSION_1_UP_LOCK:
-            return model->fgGetDouble("/fdm/jsbsim/gear/unit[1]/pos-norm");
-        case ED_FM_SUSPENSION_2_GEAR_POST_STATE:
-        case ED_FM_SUSPENSION_2_DOWN_LOCK:
-        case ED_FM_SUSPENSION_2_UP_LOCK:
-            return model->fgGetDouble("/fdm/jsbsim/gear/unit[2]/pos-norm");
-        }
+    }
+    if (local_debug >= 2)
+        printf(" ed_fm_get_param %d = %f\n", index, paramValue);
 
-        static const int block_size =
-            ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT -
-            ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
-        switch (index) {
-        case 0 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
-            //return A37::Systems::Gear::noseGearValue;
-        case 1 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
-            //return A37::Systems::Gear::leftGearValue;
-        case 2 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
-            //return A37::Systems::Gear::rightGearValue;
-            return 0;
-        }
-    } else if (index >= ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT &&
-               index < ED_FM_OXYGEN_SUPPLY) {
-        static const int block_size =
-            ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT -
-            ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
-        switch (index) {
-        case 0 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
-            //return A37::Systems::Gear::noseGearValue;
-        case 1 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
-            //return A37::Systems::Gear::leftGearValue;
-        case 2 * block_size + ED_FM_SUSPENSION_0_GEAR_POST_STATE:
-            //return A37::Systems::Gear::rightGearValue;
-            return 0;
-        }
-    } else
-        switch (index) {
-            //ED_FM_CAN_ACCEPT_FUEL_FROM_TANKER,// return positive value if all conditions are matched to connect to tanker and get fuel
-            //ED_FM_ENGINE_1_RPM = 100,
-            //ED_FM_ENGINE_1_RELATED_RPM,
-            //ED_FM_ENGINE_1_CORE_RPM,
-            //ED_FM_ENGINE_1_CORE_RELATED_RPM,
-            //ED_FM_ENGINE_1_THRUST,
-            //ED_FM_ENGINE_1_RELATED_THRUST,
-            //ED_FM_ENGINE_1_CORE_THRUST,
-            //ED_FM_ENGINE_1_CORE_RELATED_THRUST,
-            //
-            //ED_FM_PROPELLER_1_RPM,    // propeller RPM , for helicopter it is main rotor RPM
-            //ED_FM_PROPELLER_1_PITCH,  // propeller blade pitch
-            //ED_FM_PROPELLER_1_TILT,   // for helicopter
-            //ED_FM_PROPELLER_1_INTEGRITY_FACTOR,   // for 0 to 1 , 0 is fully broken ,
-            //
-            //ED_FM_ENGINE_1_TEMPERATURE,//Celcius
-            //ED_FM_ENGINE_1_OIL_PRESSURE,
-            //ED_FM_ENGINE_1_FUEL_FLOW,
-            //ED_FM_ENGINE_1_COMBUSTION,//level of combustion for engine  , 0 - 1
-            //
-            //ED_FM_PISTON_ENGINE_1_MANIFOLD_PRESSURE,
-            //ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT,
-            //ED_FM_SUSPENSION_0_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
-            //ED_FM_SUSPENSION_0_UP_LOCK,
-            //ED_FM_SUSPENSION_0_DOWN_LOCK,
-            //ED_FM_SUSPENSION_0_WHEEL_YAW,
-            //ED_FM_SUSPENSION_0_WHEEL_SELF_ATTITUDE,
-            //
-            //ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT = ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT + 10,
-            //ED_FM_SUSPENSION_1_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
-            //ED_FM_SUSPENSION_1_UP_LOCK,
-            //ED_FM_SUSPENSION_1_DOWN_LOCK,
-            //ED_FM_SUSPENSION_1_WHEEL_YAW,
-            //ED_FM_SUSPENSION_1_WHEEL_SELF_ATTITUDE,
-            //
-            //
-            //ED_FM_SUSPENSION_2_RELATIVE_BRAKE_MOMENT = ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT + (ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT),
-            //ED_FM_SUSPENSION_2_GEAR_POST_STATE, // from 0 to 1 : from fully retracted to full released
-            //ED_FM_SUSPENSION_2_UP_LOCK,
-            //ED_FM_SUSPENSION_2_DOWN_LOCK,
-            //ED_FM_SUSPENSION_2_WHEEL_YAW,
-            //ED_FM_SUSPENSION_2_WHEEL_SELF_ATTITUDE,
+    return paramValue;
+}
 
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_0_LEFT,			// Values from different group of tanks
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_0_RIGHT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_1_LEFT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_1_RIGHT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_2_LEFT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_2_RIGHT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_3_LEFT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_3_RIGHT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_4_LEFT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_4_RIGHT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_5_LEFT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_5_RIGHT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_6_LEFT,
-            //    ED_FM_FUEL_FUEL_TANK_GROUP_6_RIGHT,
-            //    ED_FM_FUEL_INTERNAL_FUEL,
-            //    ED_FM_FUEL_TOTAL_FUEL,
-            //    ED_FM_FUEL_LOW_SIGNAL,						// Low fuel signal
-            //        ED_FM_ANTI_SKID_ENABLE,// return positive value if anti skid system is on , it also corresspond with suspension table "anti_skid_installed"  parameter for each gear post .i.e
-        case ED_FM_FLOW_VELOCITY:
-            break;
-        case ED_FM_OXYGEN_SUPPLY: // oxygen provided from on board oxygen system, pressure - pascal)
-            break;
 
-        // additional pressure from pressurization system , pascal , actual cabin pressure will be AtmoPressure + COCKPIT_PRESSURIZATION_OVER_EXTERNAL
-        case ED_FM_COCKPIT_PRESSURIZATION_OVER_EXTERNAL: {
-            double cabin_alt = model->fgGetDouble("/fdm/jsbsim/systems/ecs/cabin-altitude-ft");
-            double cabin_pressure = model->get_pressure_at_atltiude_lbf_ft2(cabin_alt);
-            double diff = (cabin_pressure - model->get_atmosphere_pressure_lbf_ft2()) / PA_TO_LBF_FT2;
-            //        printf("cabin alt: %.1f pres %.1f ext %.1f diff %.1f \n", cabin_alt, cabin_pressure, model->get_atmosphere_pressure_lbf_ft2(), diff);
-            return diff;
-        } break;
-        }
-    return 0;
+extern "C" __declspec(dllexport) double acefm_get_property(const char* path)
+{
+    FGJSBsim* m = get_model();
+    return m ? m->fgGetDouble(path) : 0.0;
+}
+
+extern "C" __declspec(dllexport) int acefm_get_command_count()
+{
+    DCS_interface* dcs = get_dcs_interface();
+    return dcs ? (int)dcs->commands.GetRegistry().size() : 0;
+}
+
+extern "C" __declspec(dllexport) void acefm_get_command_info(
+    int index, int* out_icommand, char* out_name, int name_max,
+    int* out_discrete, float* out_value, float* out_min, float* out_max)
+{
+    DCS_interface* dcs = get_dcs_interface();
+    if (!dcs) return;
+    const auto& reg = dcs->commands.GetRegistry();
+    if (index < 0 || index >= (int)reg.size()) return;
+    const auto& e = reg[index];
+    if (out_icommand) *out_icommand = e.icommand;
+    if (out_name && name_max > 0) {
+        strncpy(out_name, e.name.c_str(), (size_t)(name_max - 1));
+        out_name[name_max - 1] = '\0';
+    }
+    if (out_discrete) *out_discrete = e.is_discrete ? 1 : 0;
+    if (out_value)    *out_value    = e.discrete_value;
+    if (out_min)      *out_min      = e.clip_min;
+    if (out_max)      *out_max      = e.clip_max;
+}
+
+extern "C" __declspec(dllexport) double acefm_get_command_readback(int icommand)
+{
+    DCS_interface* dcs = get_dcs_interface();
+    return dcs ? dcs->commands.Readback(icommand) : 0.0;
 }
 
 
