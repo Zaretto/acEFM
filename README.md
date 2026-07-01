@@ -2,8 +2,40 @@
 This permits the use of JSBSim models from with DCS World;
 There must be a config file in the root of your mod; "aceFMconfig.xml" that sets the basic data (properties) and defines which JSBSim XML file to use. Usually the JSBSim XML will include other files (e.g. engines, systems).
 
-* Required to use my JSBSim fork https://github.com/Zaretto/jsbsim.git using branch DCS-WIP-hacky 
+* Required to use my JSBSim fork https://github.com/Zaretto/jsbsim.git using branch DCS-WIP-no-hacks (included as the `JSBSim/` git submodule)
 * See https://github.com/Zaretto/DCS-SEPECAT-Jaguar for an example
+
+## JSBSim integration
+
+JSBSim is built as a **CMake-generated static library** (`libJSBSim` → `JSBSim.lib`) and linked into the EFM. The JSBSim tree stays pristine — there is no longer a hand-maintained `JSBSim.vcxproj` in the source tree.
+
+* CMake source: `JSBSim/`  →  build tree: `build/JSBSim/` (generator *Visual Studio 17 2022*, platform `x64`, `BUILD_SHARED_LIBS=OFF`).
+* CMake splits the build into one top-level project, `libJSBSim` (compiles only `FGFDMExec.cpp` + `JSBSim.cpp`), plus **14 sub-projects** that compile the rest and are linked in: `Atmosphere`, `FlightControl`, `GeographicLib`, `IOStreams`, `Init`, `InputOutput`, `Magvar`, `Math`, `Misc`, `Models`, `Properties`, `Propulsion`, `Xml`, and the `ZERO_CHECK` regeneration helper.
+* `acEFM` and `TestPlane` reference `build\JSBSim\src\libJSBSim.vcxproj` as a project reference.
+* **All of these CMake projects are added to `acEFM.sln`** (under the *JSBSim libs* solution folder). This is required for incremental build and debug: if only `libJSBSim` were in the solution, Visual Studio's up-to-date check would not notice edits to JSBSim sources (they belong to the sub-projects), so a build would do nothing and the debugger would report *"source file is out of date"*.
+
+### Building and debugging JSBSim from the acEFM solution
+
+* Open `acEFM.sln`, select **`Debug | x64`**, and build. To step into JSBSim source, you must use **Debug** — the `Release` / `JSBSimRelease` / `JSBSim64` solution configs map the JSBSim libs to optimised `Release|x64`.
+* Set **TestPlane** as the startup project (DCS loads the DLL in-process, so TestPlane is the practical harness). Breakpoints in `JSBSim\src\...\*.cpp` are hit and you can step in.
+* Editing the body of an existing JSBSim source file → just rebuild; only that file recompiles.
+* **Adding / removing / renaming** a JSBSim source file, or editing any `CMakeLists.txt`, requires regenerating the CMake projects:
+  ```
+  cmake -S JSBSim -B build/JSBSim
+  ```
+  Project GUIDs are stable across regeneration, so the entries in `acEFM.sln` keep working.
+* `cmake` and `msbuild` are not on `PATH` by default. Run the above from **"Developer PowerShell for VS"**, or use the copy bundled with Visual Studio:
+  `…\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe`.
+
+## Platform / toolset versions
+
+* The standard toolset is **`v143`** (**Visual Studio 2022** 17.x, **MSVC 14.44**). The CMake-generated JSBSim projects build with `v143`.
+* On Richard's machine `acEFM` and `TestPlane` are locally bumped to PlatformToolset **`v145`** to test against **VS 2026 / v18**. This is a per-machine testing setting, **not** a project requirement — `v145` is not generally available, and without those build tools installed these projects fail with `MSB8020`. Retarget them back to `v143` on any machine that only has VS 2022.
+* Mixing is safe to link: the `v14x` static-library ABI is stable across `v143`/`v145`, so a `v143` `JSBSim.lib` links cleanly into a `v145` `acEFM.dll`.
+* To also compile/debug JSBSim itself under `v145`, regenerate the CMake build with that toolset:
+  ```
+  cmake -S JSBSim -B build/JSBSim -T v145
+  ```
 
 ## acEFMconfig.xml DCS elements
 
@@ -58,6 +90,51 @@ e.g. for afterburners.
         <delta>0.01</delta>
       </drawarg>
     </animations>
+```
+
+### Commands
+
+DCS passes pilot inputs to the EFM through `ed_fm_set_command(command, value)`, where `command` is a DCS *iCommand* code (e.g. `iCommandPlanePitch`, `iCommandPlaneThrustCommon`). acEFM maps these to JSBSim properties entirely through the config file — **there are no built-in command bindings**, so the `<commands>` section is required for throttle, flight controls and gear to work.
+
+The iCommand codes are defined in `flyt-EFM-dcsJSBSim/iCommands.h`, generated from [DCS-OpenSource/LuaToolsPlugin](https://github.com/DCS-OpenSource/LuaToolsPlugin) (`iCommands.lua`).
+
+Each `<command>` maps one iCommand to one JSBSim property. A command may appear multiple times to drive several properties (e.g. a common throttle feeding each engine).
+
+Nodes as follows
+* `<name>` the iCommand by name (e.g. `iCommandPlaneFlapsOn`), **or** `<icommand>` the numeric code — one of these is required
+* `<property>` the JSBSim property to write
+* `<value>` if present, this fixed value is written on every event (discrete commands — gear up/down, flaps on/off). When omitted, the command's own value is transformed:
+  * `<factor>` scale applied to the incoming value (number, or a named constant such as `DEGREES_TO_RADIANS`; default `1`)
+  * `<offset>` added after scaling (default `0`)
+  * `<clip-min>` / `<clip-max>` optional output limits
+
+The transform is `out = clip(value * factor + offset, clip-min, clip-max)`. Set `/fdm/jsbsim/acefm/debug-commands` non-zero to log each applied binding.
+
+```
+    <commands>
+      <!-- Throttle: DCS sends +1 (idle) .. -1 (full); JSBSim wants 0..1.
+           One entry per engine for a common throttle. -->
+      <command><name>iCommandPlaneThrustCommon</name><property>/fdm/jsbsim/fcs/throttle-cmd-norm[0]</property><factor>-0.5</factor><offset>0.5</offset><clip-min>0</clip-min><clip-max>1</clip-max></command>
+      <command><name>iCommandPlaneThrustCommon</name><property>/fdm/jsbsim/fcs/throttle-cmd-norm[1]</property><factor>-0.5</factor><offset>0.5</offset><clip-min>0</clip-min><clip-max>1</clip-max></command>
+      <command><name>iCommandPlaneThrustLeft</name><property>/fdm/jsbsim/fcs/throttle-cmd-norm[0]</property><factor>-0.5</factor><offset>0.5</offset><clip-min>0</clip-min><clip-max>1</clip-max></command>
+      <command><name>iCommandPlaneThrustRight</name><property>/fdm/jsbsim/fcs/throttle-cmd-norm[1]</property><factor>-0.5</factor><offset>0.5</offset><clip-min>0</clip-min><clip-max>1</clip-max></command>
+
+      <!-- Flight controls -->
+      <command><name>iCommandPlanePitch</name><property>/fdm/jsbsim/fcs/elevator-cmd-norm</property><factor>-1.0</factor></command>
+      <command><name>iCommandPlaneRoll</name><property>/fdm/jsbsim/fcs/aileron-cmd-norm</property></command>
+      <command><name>iCommandPlaneRudder</name><property>/fdm/jsbsim/fcs/rudder-cmd-norm</property></command>
+
+      <!-- Gear: toggle axis, plus discrete up/down -->
+      <command><name>iCommandPlaneGear</name><property>/fdm/jsbsim/gear/gear-cmd-norm</property></command>
+      <command><name>iCommandPlaneGearDown</name><property>/fdm/jsbsim/gear/gear-cmd-norm</property><value>1.0</value></command>
+      <command><name>iCommandPlaneGearUp</name><property>/fdm/jsbsim/gear/gear-cmd-norm</property><value>0.0</value></command>
+
+      <!-- Flaps / airbrake on/off -->
+      <command><name>iCommandPlaneFlapsOn</name><property>/fdm/jsbsim/fcs/flap-cmd-norm</property><value>1.0</value></command>
+      <command><name>iCommandPlaneFlapsOff</name><property>/fdm/jsbsim/fcs/flap-cmd-norm</property><value>0.0</value></command>
+      <command><name>iCommandPlaneAirBrakeOn</name><property>/fdm/jsbsim/fcs/speedbrake-cmd-norm</property><value>1.0</value></command>
+      <command><name>iCommandPlaneAirBrakeOff</name><property>/fdm/jsbsim/fcs/speedbrake-cmd-norm</property><value>0.0</value></command>
+    </commands>
 ```
 
 ## Folder structure

@@ -35,9 +35,14 @@ FGJSBsim *get_model()
     return model;
 
 }
+DCS_interface* get_dcs_interface()
+{
+    get_model();   // ensures model + dcs_i are constructed
+    return dcs_i;
+}
 void ed_fm_set_draw_args_v2(float* drawargs, size_t size)
 {
-    printf("ed_fm_set_draw_args_v2 %x %d\n", drawargs, size);
+    printf("ed_fm_set_draw_args_v2 %f %d\n", drawargs, size);
 }
 
 void ed_fm_set_draw_args(EdDrawArgument* drawargs, size_t size)

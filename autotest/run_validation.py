@@ -8,6 +8,9 @@ using tolerances defined in validation-package/tolerances.xml.
 
 Adapted from JSBSim's check_cases pattern (JSBSim_utils.py).
 
+Requires autotest/autotest.xml (master config) and
+autotest/validation-package/tolerances.xml in the aircraft mod directory.
+
 Usage:
     # Run all tests (JSBSim.exe found via the build tree or PATH)
     python run_validation.py --aircraft path/to/AircraftMod
@@ -262,74 +265,6 @@ def parse_tolerances(tolerances_path):
     return global_tols, per_test_overrides
 
 
-def parse_tolerances_legacy(tolerances_path):
-    """Parse old-format tolerances.xml that contains both test definitions and tolerances.
-
-    Returns list of TestSpec (backward-compatible with pre-autotest.xml format).
-    """
-    tree = ET.parse(tolerances_path)
-    root = tree.getroot()
-    tests = []
-
-    # Parse optional <global-tolerances> section
-    global_tols = None
-    gt_elem = root.find("global-tolerances")
-    if gt_elem is not None:
-        global_tols = GlobalTolerances()
-        for tol_elem in gt_elem.findall("tolerance"):
-            pattern = tol_elem.get("match")
-            tol = ToleranceSpec(
-                pattern,
-                tol_abs=tol_elem.get("tol_abs"),
-                tol_rel=tol_elem.get("tol_rel"),
-            )
-            global_tols.rules.append((pattern, tol))
-        gt_default = gt_elem.find("default")
-        if gt_default is not None:
-            global_tols.default_tol_abs = float(gt_default.get("tol_abs", "1e-3"))
-            global_tols.default_tol_rel = float(gt_default.get("tol_rel", "0.01"))
-
-    for test_elem in root.findall("test"):
-        name = test_elem.get("name")
-        script = test_elem.get("script")
-        if not script:
-            continue  # Skip tolerance-only entries (no script = override entry)
-        desc_elem = test_elem.find("description")
-        description = desc_elem.text.strip() if desc_elem is not None and desc_elem.text else ""
-
-        spec = TestSpec(name, script, description)
-
-        ds_elem = test_elem.find("data-source")
-        if ds_elem is not None:
-            spec.data_source_level = ds_elem.get("level", "")
-
-        for of_elem in test_elem.findall("output-file"):
-            output_name = of_elem.get("name")
-            baseline_name = of_elem.get("baseline")
-            of_spec = OutputFileSpec(output_name, baseline_name)
-            of_spec.global_tolerances = global_tols
-
-            for prop_elem in of_elem.findall("property"):
-                prop_name = prop_elem.get("name")
-                tol = ToleranceSpec(
-                    prop_name,
-                    tol_abs=prop_elem.get("tol_abs"),
-                    tol_rel=prop_elem.get("tol_rel"),
-                )
-                of_spec.properties[prop_name] = tol
-
-            default_elem = of_elem.find("default")
-            if default_elem is not None:
-                of_spec.default_tol_abs = float(default_elem.get("tol_abs", "1e-3"))
-                of_spec.default_tol_rel = float(default_elem.get("tol_rel", "0.01"))
-
-            spec.output_files.append(of_spec)
-
-        tests.append(spec)
-
-    return tests
-
-
 def parse_autotest_config(autotest_xml_path, tolerances_path):
     """Parse autotest.xml master config and return (paths_dict, list of TestSpec).
 
@@ -504,6 +439,8 @@ def run_test(jsbsim_exe, aircraft_dir, script_path, mode="dcs", verbose=0):
             cwd=str(aircraft_dir),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=300,
             env=env,
         )
@@ -1773,23 +1710,16 @@ def main():
     tolerances_path = aircraft_dir / "autotest" / "validation-package" / "tolerances.xml"
     autotest_xml_path = aircraft_dir / "autotest" / "autotest.xml"
 
-    # Determine configuration source: autotest.xml (new) or tolerances.xml (legacy)
     group_metadata = None
     suite_metadata = {}
-    if autotest_xml_path.exists():
-        if not tolerances_path.exists():
-            print(f"ERROR: Tolerances file not found at {tolerances_path}")
-            sys.exit(2)
-        print(f"Using autotest.xml configuration: {autotest_xml_path}")
-        print("Parsing test configuration and tolerances...")
-        _, tests, group_metadata, suite_metadata = parse_autotest_config(autotest_xml_path, tolerances_path)
-    elif tolerances_path.exists():
-        print(f"Using legacy tolerances.xml configuration: {tolerances_path}")
-        print("Parsing tolerances...")
-        tests = parse_tolerances_legacy(tolerances_path)
-    else:
-        print(f"ERROR: Neither autotest.xml nor tolerances.xml found")
+    if not autotest_xml_path.exists():
+        print(f"ERROR: autotest.xml not found at {autotest_xml_path}")
         sys.exit(2)
+    if not tolerances_path.exists():
+        print(f"ERROR: tolerances.xml not found at {tolerances_path}")
+        sys.exit(2)
+    print("Parsing test configuration and tolerances...")
+    _, tests, group_metadata, suite_metadata = parse_autotest_config(autotest_xml_path, tolerances_path)
 
     if not tests:
         print("No tests defined")

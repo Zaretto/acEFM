@@ -6,12 +6,16 @@
 #include "math/FGQuaternion.h"
 #include "models/FGPropulsion.h"
 #include "models/FGMassBalance.h"
+#include "iCommands.h"   // DCS input command codes (from DCS-OpenSource/LuaToolsPlugin)
 #include <string>
+
+using namespace DCS;     // bring iCommand* identifiers into scope
 Vec3d center_of_mass;                    // m
 Vec3d common_moment;                     // kg/m^2
 Vec3d common_force;                      // N
 
 extern FGJSBsim* get_model();
+extern DCS_interface* get_dcs_interface();
 
 DCS_interface::DCS_interface() : drawArguments(get_model())
 {
@@ -213,6 +217,72 @@ static std::map<std::string, double> conversion_map = {
 };
 
 
+// Build default ed_fm_get_param bindings for N engines using standard JSBSim
+// turbine property paths.  Called after XML <params> are parsed so any
+// aircraft-specific <param> overrides already registered by AddItem() take
+// priority (AddDefault skips indices that are already present).
+//
+// Engine count comes from <sim><engine-count> in aceFMconfig.xml; if absent
+// or zero, falls back to however many engines JSBSim loaded.
+//
+// Default mappings (override per-aircraft via <params> in aceFMconfig.xml):
+//   RPM              -> n1  (LP/fan spool %)      factor 1
+//   RELATED_RPM      -> n2  (HP/core spool, 0-1)  factor 0.01
+//   CORE_RPM         -> n2  (HP/core spool %)      factor 1
+//   CORE_RELATED_RPM -> n2  (0-1)                  factor 0.01
+//   THRUST           -> thrust-lbs                 factor LBS_TO_N
+//   TEMPERATURE      -> egt-degc                   factor 1
+//   OIL_PRESSURE     -> oil-pressure-psi           factor 1
+//   FUEL_FLOW        -> fuel-flow-rate-pps          factor 1
+//   COMBUSTION       -> running                     factor 1
+// Build default ed_fm_get_param bindings for N gear units using standard
+// JSBSim gear property paths.  Called after XML <params> so aircraft overrides win.
+//
+// Default mappings:
+//   GEAR_POST_STATE -> gear/unit[N]/pos-norm  (0=retracted, 1=extended)
+//   DOWN_LOCK       -> gear/unit[N]/pos-norm  (1.0 at full extension; approximate)
+//
+// UP_LOCK has no clean default (inversion can't be expressed as a factor);
+// aircraft that need it should supply it via <params> in aceFMconfig.xml.
+// Gear unit count from <sim><gear-count>; defaults to 3 (tricycle) if absent.
+static void RegisterGearDefaults(FGJSBsim* model, ParamMap& params, int gearCount)
+{
+    static const unsigned BLOCK      = ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT
+                                     - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
+    static const unsigned POST_STATE = ED_FM_SUSPENSION_0_GEAR_POST_STATE
+                                     - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
+    static const unsigned DOWN_LOCK  = ED_FM_SUSPENSION_0_DOWN_LOCK
+                                     - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
+
+    printf("acEFM: RegisterGearDefaults for %d unit(s)\n", gearCount);
+    for (int n = 0; n < gearCount; n++) {
+        unsigned base = ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT + (unsigned)n * BLOCK;
+        std::string p = "/fdm/jsbsim/gear/unit[" + std::to_string(n) + "]/";
+        params.AddDefault(model, base + POST_STATE, p + "pos-norm", 1.0);
+        params.AddDefault(model, base + DOWN_LOCK,  p + "pos-norm", 1.0);
+    }
+}
+
+static void RegisterEngineDefaults(FGJSBsim* model, ParamMap& params, int engineCount)
+{
+    static const unsigned BLOCK = ED_FM_ENGINE_1_RPM - ED_FM_ENGINE_0_RPM;
+    printf("acEFM: RegisterEngineDefaults for %d engine(s)\n", engineCount);
+    for (int jsb = 0; jsb < engineCount; jsb++) {
+        unsigned base = (unsigned)(jsb + 1) * BLOCK; // DCS engine jsb+1 (0 = APU)
+        std::string p = "/fdm/jsbsim/propulsion/engine[" + std::to_string(jsb) + "]/";
+
+        params.AddDefault(model, base + ED_FM_ENGINE_0_RPM,              p + "n1",                  1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_RELATED_RPM,      p + "n2",                  0.01);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_CORE_RPM,         p + "n2",                  1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_CORE_RELATED_RPM, p + "n2",                  0.01);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_THRUST,           p + "thrust-lbs",          LBS_TO_N);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_TEMPERATURE,      p + "egt-degc",            1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_OIL_PRESSURE,     p + "oil-pressure-psi",    1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_FUEL_FLOW,        p + "fuel-flow-rate-pps",  1.0);
+        params.AddDefault(model, base + ED_FM_ENGINE_0_COMBUSTION,       p + "running",             1.0);
+    }
+}
+
 void DCS_interface::initialize(FGJSBsim * _model)
 {
     printf("acEFM: DCS_interface Initialize\n");
@@ -225,9 +295,49 @@ void DCS_interface::initialize(FGJSBsim * _model)
             auto delta = drawarg->getFloatValue("delta", 0.0001);
             auto offset = drawarg->getFloatValue("offset", 0);
             drawArguments.AddItem(drawarg->getIndex(), prop, factor, delta, offset);
-            ;
         }
     }
+
+    auto paramsNode = _model->PropertyManager->GetNode("sim/params");
+    if (paramsNode != nullptr) {
+        static const std::map<std::string, int> enumLookup(
+            enumMap, enumMap + sizeof(enumMap) / sizeof(enumMap[0]));
+        for (auto param : paramsNode->getChildren("param")) {
+            std::string indexStr = param->getStringValue("index");
+            unsigned idx;
+            auto it = enumLookup.find(indexStr);
+            if (it != enumLookup.end()) {
+                idx = (unsigned)it->second;
+            } else {
+                try { idx = (unsigned)std::stoi(indexStr); }
+                catch (...) {
+                    SG_LOG(SG_FLIGHT, SG_ALERT, "Param:: unknown index '" << indexStr << "'");
+                    continue;
+                }
+            }
+            std::string prop = param->getStringValue("property");
+            double factor = param->getDoubleValue("factor", 1.0);
+            if (!prop.empty())
+                params.AddItem(_model, idx, prop, factor);
+        }
+    }
+
+    {
+        SGPropertyNode* ecNode = _model->PropertyManager->GetNode("sim/engine-count");
+        int engineCount = (ecNode && ecNode->getDoubleValue() > 0)
+                          ? (int)ecNode->getDoubleValue()
+                          : (int)_model->Propulsion->GetNumEngines();
+        RegisterEngineDefaults(_model, params, engineCount);
+    }
+
+    {
+        SGPropertyNode* gcNode = _model->PropertyManager->GetNode("sim/gear-count");
+        int gearCount = (gcNode && gcNode->getDoubleValue() > 0)
+                        ? (int)gcNode->getDoubleValue()
+                        : 3;
+        RegisterGearDefaults(_model, params, gearCount);
+    }
+
     auto cockpitNode = _model->PropertyManager->GetNode("sim/cockpit");
     if (cockpitNode != nullptr) {
         // cockpit base dll
@@ -264,7 +374,7 @@ void DCS_interface::initialize(FGJSBsim * _model)
             auto param = gauge->getStringValue("param");
             auto prop = gauge->getStringValue("property");
             auto factor = gauge->getDoubleValue("factor", 1.0);
-            auto delta = gauge->getDoubleValue("delta", 0.0001);
+            auto delta = gauge->getDoubleValue("delta", 0);
             if (factor == 0) { // factor of 0 makes no sense so it is probably a string lookup
                 auto factor_name = gauge->getStringValue("factor");
                 if (conversion_map.find(factor_name) != conversion_map.end())
@@ -290,7 +400,59 @@ void DCS_interface::initialize(FGJSBsim * _model)
         }
     } else
         SG_LOG(SG_FLIGHT, SG_ALERT, "Missing cockpit definition in /sim/cockpit");
-   
+
+    // Config-driven input command bindings: map DCS iCommand codes to JSBSim
+    // properties (e.g. flaps/airbrake on/off).  See <sim><commands> in
+    // aceFMconfig.xml.
+    auto commandsNode = _model->PropertyManager->GetNode("sim/commands");
+    if (commandsNode != nullptr) {
+        commands.Init(_model);
+        for (auto cmd : commandsNode->getChildren("command")) {
+            // Command may be given numerically (<icommand>) or by symbolic name
+            // (<name>, e.g. iCommandPlaneFlapsOn) resolved via iCommands.h.
+            int icmd = cmd->getIntValue("icommand", -1);
+            if (icmd < 0) {
+                auto name = cmd->getStringValue("name");
+                if (name != std::string())
+                    icmd = DCS::iCommandFromName(name);
+            }
+            if (icmd < 0) {
+                SG_LOG(SG_FLIGHT, SG_ALERT,
+                       "Command binding requires a valid <icommand> or <name>");
+                continue;
+            }
+
+            auto prop = cmd->getStringValue("property");
+            if (prop == std::string()) {
+                SG_LOG(SG_FLIGHT, SG_ALERT,
+                       "Command " << icmd << " requires a <property>");
+                continue;
+            }
+
+            double factor = cmd->getDoubleValue("factor", 1.0);
+            if (factor == 0) { // 0 makes no sense for a multiplier: treat as a named constant
+                auto factor_name = cmd->getStringValue("factor");
+                if (conversion_map.find(factor_name) != conversion_map.end())
+                    factor = conversion_map[factor_name];
+                else
+                    SG_LOG(SG_FLIGHT, SG_ALERT,
+                           "Unknown factor " << factor_name << " for command " << icmd);
+            }
+            double offset = cmd->getDoubleValue("offset", 0.0);
+
+            // Optional output clip.  Absent bound -> no limit on that side.
+            double clipMin = cmd->getDoubleValue("clip-min", -std::numeric_limits<double>::max());
+            double clipMax = cmd->getDoubleValue("clip-max",  std::numeric_limits<double>::max());
+
+            // A <value> element means "write this fixed value" (discrete
+            // commands); its absence means "transform the command value".
+            bool   hasFixedValue = cmd->hasChild("value");
+            double fixedValue    = cmd->getDoubleValue("value", 0.0);
+
+            commands.AddItem(_model, icmd, prop, factor, offset, clipMin, clipMax,
+                             hasFixedValue, fixedValue);
+        }
+    }
 }
 void DCS_interface::simulate(double dt)
 {
@@ -365,6 +527,11 @@ void DCS_interface::simulate(double dt)
 double ed_fm_get_param(unsigned index)
 {
     FGJSBsim* model = get_model();
+
+    double paramValue;
+    if (get_dcs_interface()->params.TryGet(index, paramValue))
+        return paramValue;
+
     if (index < ED_FM_END_ENGINE_BLOCK) {
         // engine block: each DCS engine occupies a block of 100 indices
         // DCS engine 0 = APU, DCS engine N (N>=1) = JSBSim engine[N-1]
@@ -937,50 +1104,17 @@ input handling
 */
 void ed_fm_set_command(int command, float value)
 {
-    FGJSBsim *model = get_model();
     rec_cmd(command, value);
-    if (command == 2004) { //iCommandPlaneThrustCommon
-        // +1 off
-        // -1 full
-        value = (-value + 1.0) / 2.0;
-        for (unsigned int e = 0; e < model->Propulsion->GetNumEngines(); e++)
-            model->set_fcs_throttle_cmd_norm(e, value);
-    }
-    else if (command == 2005) { //iCommandPlaneThrustLeft
-        value = (-value + 1.0) / 2.0;
-        model->set_fcs_throttle_cmd_norm(0, value);
-    }
-    else if (command == 2006) { //iCommandPlaneThrustRight
-        value = (-value + 1.0) / 2.0;
-        model->set_fcs_throttle_cmd_norm(1, value);
-    }
-    else if (command == 2001) { //iCommandPlanePitch
-        double ep = -value;// 0.5 * (-value + 1.0);
-        model->set_fcs_elevator_cmd_norm(ep);
-        model->dbg.elevator_cmd->setDoubleValue(ep);
-    }
-    else if (command == 2002) { //iCommandPlaneRoll{
-        model->set_fcs_aileron_cmd_norm(value);
-        model->dbg.aileron_cmd->setDoubleValue(value);
-    }
-    else if (command == 2003) { //iCommandPlaneYaw{
-        model->set_fcs_rudder_cmd_norm(value);
-        model->dbg.rudder_cmd->setDoubleValue(value);
-    }
-    //else if (command == 2035) {
-    //    printf("Gear %d -> %.2f\n", command, value);
-    //    model->set_fcs_gear_cmd_norm(value);
-    //}
-    else if (command == 68 || command == 1609) {
-        model->set_fcs_gear_cmd_norm(value);
-    }
-    else if (command == 431) {
-        model->set_fcs_gear_cmd_norm(1.0);
-    }
-    else if (command == 430) {
-        model->set_fcs_gear_cmd_norm(0);
-    }
-    if (command < 2000)
+
+    // All input bindings are config-driven: aceFMconfig.xml <sim><commands>
+    // maps each DCS iCommand code to a JSBSim property via a scale/offset/clip
+    // transform or a fixed value.  See the README ("Commands") for the format
+    // and the bindings needed for throttle, flight controls and gear.
+    DCS_interface* dcs = get_dcs_interface();
+    if (dcs)
+        dcs->commands.Handle(command, value);
+
+    if (command < iCommandKeyNull)
         printf("Command %d -> %.2f\n", command, value);
 }
 

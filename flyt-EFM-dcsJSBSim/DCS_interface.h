@@ -6,6 +6,9 @@
 #include "DCS-API/include/FM/wHumanCustomPhysicsAPI.h"
 #include "JSBSim_interface.h"
 #include "input_output/FGPropertyManager.h"
+#include "iCommands.h"
+#include <map>
+#include <limits>
 
 using std::cout;
 using std::cerr;
@@ -188,7 +191,11 @@ public:
     {
         if (input_node != nullptr) {
             auto newValue = input_node->getDoubleValue();
-            bool rv = std::abs(Value - newValue) >= Delta;
+         
+            bool rv = true;
+
+            if (Delta != 0)
+                rv = std::abs(Value - newValue) >= Delta;
 
             if (rv)
                 Value = newValue;
@@ -529,11 +536,152 @@ public:
         }
     }
 };
+// ----------------------------------------------------------------------------
+// CommandItem / CommandMap
+//
+// Config-driven mapping of DCS input commands (iCommand* codes passed to
+// ed_fm_set_command) to JSBSim properties.  Declared in aceFMconfig.xml under
+// <sim><commands>.  A binding either:
+//   * writes a fixed <value>  (discrete on/off commands - flaps, gear up/down),
+//     or
+//   * transforms the command's own value:  out = clip(value*factor + offset).
+//
+// The transform subset (scale, offset, clip) is enough to express every input
+// binding the bridge needs - e.g. throttle is factor=-0.5 offset=0.5 clipped to
+// [0,1]; pitch is factor=-1; pass-through is the default factor=1 offset=0.
+// ----------------------------------------------------------------------------
+class CommandItem
+{
+    int command;
+    SGPropertyNode* node;
+    std::string property;
+    double factor;
+    double offset;
+    double clipMin;
+    double clipMax;
+    bool   hasFixedValue;
+    double fixedValue;
+
+public:
+    CommandItem(FGJSBsim* model, int command, const std::string& prop,
+                double factor, double offset, double clipMin, double clipMax,
+                bool hasFixedValue, double fixedValue)
+        : command(command), property(prop), factor(factor), offset(offset),
+          clipMin(clipMin), clipMax(clipMax),
+          hasFixedValue(hasFixedValue), fixedValue(fixedValue)
+    {
+        node = model->PropertyManager->GetNode(prop, true);
+    }
+    int GetCommand() const { return command; }
+    const std::string& GetProperty() const { return property; }
+
+    void Apply(float value) const
+    {
+        if (!node) return;
+        double out;
+        if (hasFixedValue) {
+            out = fixedValue;
+        } else {
+            out = (double)value * factor + offset;
+            if (out < clipMin) out = clipMin;
+            if (out > clipMax) out = clipMax;
+        }
+        node->setDoubleValue(out);
+    }
+};
+
+class CommandMap
+{
+    std::multimap<int, CommandItem> items;   // one command may drive several props
+    SGPropertyNode* DebugNode = nullptr;
+
+public:
+    void Init(FGJSBsim* model)
+    {
+        DebugNode = model->PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-commands", true);
+    }
+    void AddItem(FGJSBsim* model, int command, const std::string& prop,
+                 double factor, double offset, double clipMin, double clipMax,
+                 bool hasFixedValue, double fixedValue)
+    {
+        if (hasFixedValue)
+            printf("Command:: %d -> %s = %.3f\n", command, prop.c_str(), fixedValue);
+        else
+            printf("Command:: %d -> %s (x%.3f +%.3f clip[%.3g,%.3g])\n",
+                   command, prop.c_str(), factor, offset, clipMin, clipMax);
+        items.emplace(command, CommandItem(model, command, prop, factor, offset,
+                                           clipMin, clipMax, hasFixedValue, fixedValue));
+    }
+    // Apply every binding registered for this command.  Returns true if at
+    // least one binding handled it.
+    bool Handle(int command, float value) const
+    {
+        auto range = items.equal_range(command);
+        bool handled = false;
+        for (auto it = range.first; it != range.second; ++it) {
+            it->second.Apply(value);
+            if (DebugNode != nullptr && DebugNode->getBoolValue())
+                printf("Command:: %d -> %s applied (%.3f)\n",
+                       command, it->second.GetProperty().c_str(), value);
+            handled = true;
+        }
+        return handled;
+    }
+};
+
+// ----------------------------------------------------------------------------
+// ParamMap
+//
+// Config-driven mapping of ED_FM param indices (passed to ed_fm_get_param)
+// to JSBSim properties.  Declared in aceFMconfig.xml under <sim><params>.
+//
+// Each <param> binds one DCS param index to one JSBSim property:
+//   <index>   ED_FM_* name or raw integer
+//   <property> JSBSim property path
+//   <factor>  optional multiplier (default 1.0)
+//
+// Checked first in ed_fm_get_param(); the existing hardcoded handlers run
+// only if the index is not registered here.
+// ----------------------------------------------------------------------------
+class ParamMap
+{
+    struct Entry {
+        SGPropertyNode* node;
+        double factor;
+    };
+    std::map<unsigned, Entry> items;
+
+public:
+    void AddItem(FGJSBsim* model, unsigned index, const std::string& prop, double factor = 1.0)
+    {
+        printf("Param:: %u -> %s (x%.3f)\n", index, prop.c_str(), factor);
+        items[index] = { model->PropertyManager->GetNode(prop, true), factor };
+    }
+
+    // Like AddItem but silently skips if the index is already registered.
+    // Used for built-in defaults so that XML entries always take priority.
+    void AddDefault(FGJSBsim* model, unsigned index, const std::string& prop, double factor = 1.0)
+    {
+        if (items.count(index) == 0)
+            AddItem(model, index, prop, factor);
+    }
+
+    bool TryGet(unsigned index, double& out) const
+    {
+        auto it = items.find(index);
+        if (it == items.end() || !it->second.node) return false;
+        out = it->second.node->getDoubleValue() * it->second.factor;
+        return true;
+    }
+};
+
 class DCS_interface
 {
 public:
     Cockpit cockpit;
     DrawArguments drawArguments;
+    CommandMap commands;
+    ParamMap params;
 
     DCS_interface();
     ~DCS_interface();
