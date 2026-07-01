@@ -1,0 +1,35 @@
+ImGui vendor copy
+=================
+
+Version : 1.91.8
+Source  : https://github.com/ocornut/imgui
+Copied  : 2026-06-28
+
+Files included
+--------------
+Core:
+  imgui.h / imgui.cpp
+  imgui_draw.cpp / imgui_tables.cpp / imgui_widgets.cpp
+  imgui_internal.h
+  imconfig.h (user config -- safe to customise locally)
+  imstb_rectpack.h / imstb_textedit.h / imstb_truetype.h
+
+Backends (backends/):
+  imgui_impl_win32.h / imgui_impl_win32.cpp
+  imgui_impl_opengl2.h / imgui_impl_opengl2.cpp
+
+How to update
+-------------
+1. Download the desired release zip from https://github.com/ocornut/imgui/releases
+   or clone the repo and check out the tag you want.
+
+2. Overwrite all files listed above from the new source tree.
+   The backends/ files live under imgui/backends/ in the ImGui repo.
+
+3. Check the IMGUI_VERSION string in imgui.h and update the version line
+   at the top of this file.
+
+4. If imconfig.h has local customisations, merge carefully rather than
+   overwriting blindly.
+
+5. Build TestPlane and fix any breaking API changes noted in imgui/docs/CHANGELOG.txt.

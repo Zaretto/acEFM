@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "../flyt-EFM-dcsJSBSim/DCS_interface.h"
 #include "CDirectInputJoystick.h"
+#include "instruments.h"
 #include <map>
 #include <string>
 #include <string.h>
@@ -130,12 +131,15 @@ using namespace std;
 
     CDirectInputJoystick dij;
     dij.InitDI(nullptr, GetModuleHandle(NULL));
-    int dt = 100; //ms 
+    int dt = 100; //ms
     map <string, map <string, double> > convert;
     convert["M"]["FT"] = 3.2808399;
     convert["FT"]["M"] = 1.0 / convert["M"]["FT"];
     ed_fm_set_plugin_data_install_path(userPath.c_str());
     EdDrawArgument drawargs[1000];
+
+    InstrumentsInit(GetModuleHandle(NULL));
+
         while (true) {
             double yaw = 0.1;
             double pitch = 0.2;
@@ -146,11 +150,14 @@ using namespace std;
             ed_fm_set_draw_args(&drawargs[0], 1000);
 
             dij.ProcessJoy();
+            InstrumentsUpdate();
             if (frames_to_run > 0 && --frames_to_run == 0)
                 break;
             else
                 Sleep(dt);
         }
+
+    InstrumentsShutdown();
     } catch (std::runtime_error& be) {
         printf("Exception %s\n", be.what());
     
