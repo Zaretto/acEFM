@@ -573,17 +573,17 @@ def compare_csv(output_path, baseline_path, of_spec):
         if col_lower in ("time", "t", "time (s)", "time(s)"):
             continue
 
-        # Strip the common JSBSim property prefix for tolerance lookup
+        # Strip the common JSBSim property prefix for tolerance lookup.
+        # Always try the stripped name first so global tolerance rules like
+        # "systems/hydraulics/*-system-psi*" match even when the CSV column
+        # carries the full "/fdm/jsbsim/" prefix.
         prop_name = col.strip()
-        # Try matching with and without common prefixes
-        tol_spec = of_spec.get_tolerance(prop_name)
-        if tol_spec is None:
-            # Try stripping fdm/jsbsim/ prefix
-            short_name = strip_jsbsim_prefix(prop_name)
-            if short_name != prop_name:
-                tol_spec = of_spec.get_tolerance(short_name)
-        if tol_spec is None:
-            # Fall back to default with the original column name
+        short_name = strip_jsbsim_prefix(prop_name)
+        if short_name != prop_name:
+            tol_spec = of_spec.get_tolerance(short_name)
+            if tol_spec is None:
+                tol_spec = of_spec.get_tolerance(prop_name)
+        else:
             tol_spec = of_spec.get_tolerance(prop_name)
 
         if tol_spec is None:
