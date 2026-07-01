@@ -396,10 +396,6 @@ public:
         SGPropertyNode* altitude_ft;
         SGPropertyNode* temperature_R;
         SGPropertyNode* speed_of_sound_fps;
-        // DCS control inputs (set by DCS_interface)
-        SGPropertyNode* elevator_cmd;
-        SGPropertyNode* aileron_cmd;
-        SGPropertyNode* rudder_cmd;
         // aero state (set by JSBSim_interface)
         SGPropertyNode* alpha_deg;
         SGPropertyNode* beta_deg;

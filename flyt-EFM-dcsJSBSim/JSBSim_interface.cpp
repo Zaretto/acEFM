@@ -424,10 +424,6 @@ void FGJSBsim::initDebugNodes()
     dbg.altitude_ft     = get("/fdm/jsbsim/acefm/debug/altitude-ft");
     dbg.temperature_R   = get("/fdm/jsbsim/acefm/debug/temperature-R");
     dbg.speed_of_sound_fps = get("/fdm/jsbsim/acefm/debug/speed-of-sound-fps");
-    // DCS control inputs
-    dbg.elevator_cmd    = get("/fdm/jsbsim/acefm/debug/elevator-cmd-norm");
-    dbg.aileron_cmd     = get("/fdm/jsbsim/acefm/debug/aileron-cmd-norm");
-    dbg.rudder_cmd      = get("/fdm/jsbsim/acefm/debug/rudder-cmd-norm");
     // aero state
     dbg.alpha_deg       = get("/fdm/jsbsim/acefm/debug/alpha-deg");
     dbg.beta_deg        = get("/fdm/jsbsim/acefm/debug/beta-deg");
@@ -509,7 +505,7 @@ fgSetDouble("/environment/dewpoint-degc",10);
 fgSetDouble("/environment/relative-humidity",15);
 fgSetDouble("/position/altitude-ft",10000);
 //Propagate->SetAltitudeASL(altitude->getDoubleValue());
-    fdmex->RunIC();     //loop JSBSim once w/o integrating
+     fdmex->RunIC();     //loop JSBSim once w/o integrating
     if (fgGetBool("/sim/presets/running")) {
         // Initialize engines at idle, not full power.
         // InitRunning() forces throttle=1.0 and converges at max thrust,

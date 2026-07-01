@@ -22,15 +22,50 @@ using namespace std;
     else
         userPath = argv[1];
     // The script-running modes (jsbsim, test, test-fg, bridge-test) moved to
-    // run_validation.py, which invokes JSBSim-bin.exe directly. Reject them here
-    // so a stale caller fails loudly instead of being treated as an aircraft path.
+    // run_validation.py, which invokes JSBSim.exe directly. Reject them here so a
+    // stale caller fails loudly instead of being treated as an aircraft path, but
+    // first echo the equivalent JSBSim.exe command line so the path conventions
+    // (which are easy to forget) don't have to be remembered by hand.
     if (userPath == "jsbsim" || userPath == "test" || userPath == "test-fg"
         || userPath == "bridge-test") {
+        // Path conventions kept in sync with run_validation.py's _PATH_CONVENTIONS.
+        // jsbsim mode passed its remaining args straight through to JSBSim.
+        const char* conv = nullptr;
+        if (userPath == "test")
+            conv = "--root=. --aircraft-path=EFM --engine-path=EFM/Engines "
+                   "--systems-path=EFM/Systems --init-path=autotest/init";
+        else if (userPath == "test-fg")
+            conv = "--root=. --aircraft-path=. --engine-path=Engines "
+                   "--systems-path=Systems --init-path=autotest/init";
+        else if (userPath == "bridge-test")
+            conv = "--root=. --aircraft-path=EFM --engine-path=EFM/Engines "
+                   "--systems-path=EFM/Systems --init-path=autotest/init "
+                   "--property=simulation/models/propagate/enabled=0 "
+                   "--property=simulation/models/groundreactions/enabled=0";
+
         fprintf(stderr,
             "TestPlane: '%s' mode has moved to run_validation.py, which runs "
-            "JSBSim-bin.exe directly. TestPlane handles only the EFM modes "
-            "(check, replay, and the live harness).\n",
+            "JSBSim.exe directly. TestPlane handles only the EFM modes (check, "
+            "replay, and the live harness).\n\n",
             userPath.c_str());
+
+        if (userPath == "jsbsim") {
+            // jsbsim was a thin pass-through: everything after the mode word.
+            fprintf(stderr, "Equivalent JSBSim.exe command (run from the aircraft mod dir):\n  JSBSim.exe");
+            for (int i = 2; i < argc; ++i)
+                fprintf(stderr, " %s", argv[i]);
+            fprintf(stderr, "\n");
+        } else {
+            const char* script = (argc > 2) ? argv[2] : "<script.xml>";
+            const char* mode = (userPath == "test") ? "dcs"
+                             : (userPath == "test-fg") ? "fg" : "bridge";
+            fprintf(stderr, "Equivalent JSBSim.exe command (run from the aircraft mod dir):\n  JSBSim.exe --script=%s %s", script, conv);
+            for (int i = 3; i < argc; ++i)
+                fprintf(stderr, " %s", argv[i]);
+            fprintf(stderr,
+                "\n\nOr via the runner:\n  python autotest/run_validation.py --aircraft <AircraftMod> --mode %s\n",
+                mode);
+        }
         return 2;
     }
     int frames_to_run = -1;
