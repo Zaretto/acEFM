@@ -107,6 +107,7 @@ Nodes as follows
   * `<factor>` scale applied to the incoming value (number, or a named constant such as `DEGREES_TO_RADIANS`; default `1`)
   * `<offset>` added after scaling (default `0`)
   * `<clip-min>` / `<clip-max>` optional output limits
+* `<toggle>` if present (takes priority over `<value>`), the property is flipped between `0` and this value once per press, instead of being written directly — e.g. `<toggle>1</toggle>` toggles `0`↔`1`, `<toggle>100</toggle>` toggles `0`↔`100`. Empty/omitted value defaults to `1`. A press is detected as the incoming command value going from zero to non-zero; the release (back to zero) and repeat calls while held are ignored. Use this for single-key commands DCS treats as a toggle (e.g. `iCommandPlaneGear`) rather than a 2-position lever/switch (`iCommandPlaneGearUp`/`Down`, which should keep using `<value>`).
 
 The transform is `out = clip(value * factor + offset, clip-min, clip-max)`. Set `/fdm/jsbsim/acefm/debug-commands` non-zero to log each applied binding.
 
@@ -124,8 +125,8 @@ The transform is `out = clip(value * factor + offset, clip-min, clip-max)`. Set 
       <command><name>iCommandPlaneRoll</name><property>/fdm/jsbsim/fcs/aileron-cmd-norm</property></command>
       <command><name>iCommandPlaneRudder</name><property>/fdm/jsbsim/fcs/rudder-cmd-norm</property></command>
 
-      <!-- Gear: toggle axis, plus discrete up/down -->
-      <command><name>iCommandPlaneGear</name><property>/fdm/jsbsim/gear/gear-cmd-norm</property></command>
+      <!-- Gear: single-key toggle, plus discrete up/down for a 2-position lever -->
+      <command><name>iCommandPlaneGear</name><property>/fdm/jsbsim/gear/gear-cmd-norm</property><toggle>1</toggle></command>
       <command><name>iCommandPlaneGearDown</name><property>/fdm/jsbsim/gear/gear-cmd-norm</property><value>1.0</value></command>
       <command><name>iCommandPlaneGearUp</name><property>/fdm/jsbsim/gear/gear-cmd-norm</property><value>0.0</value></command>
 
