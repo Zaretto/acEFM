@@ -433,6 +433,11 @@ public:
     //SGPropertyNode_ptr _fmag{ nullptr }, _mmag{ nullptr };
     //SGPropertyNode_ptr _fbx{ nullptr }, _fby{ nullptr }, _fbz{ nullptr };
     //SGPropertyNode_ptr _mbx{ nullptr }, _mby{ nullptr }, _mbz{ nullptr };
+    SGPropertyNode_ptr alpha_dot;
+    SGPropertyNode_ptr beta_dot;
+    SGPropertyNode_ptr nx;
+    SGPropertyNode_ptr ny;
+    SGPropertyNode_ptr nz;
 
     //void do_trim(void);
 

@@ -310,6 +310,14 @@ FGJSBsim::FGJSBsim(double dt)
     auto debugNode = PropertyManager->GetNode("/fdm/jsbsim/acefm/debug-level");
     if (debugNode != nullptr)
         fdmex->debug_lvl = debugNode->getIntValue();
+
+    alpha_dot = PropertyManager->GetNode("/fdm/jsbsim/aero/alphadot-rad_sec");
+    beta_dot = PropertyManager->GetNode("/fdm/jsbsim/aero/betadot-rad_sec");
+    nx = PropertyManager->GetNode("/fdm/jsbsim/accelerations/Nx");
+    ny = PropertyManager->GetNode("/fdm/jsbsim/accelerations/Ny");
+    nz = PropertyManager->GetNode("/fdm/jsbsim/accelerations/Nz");
+
+
     initDebugNodes();
     result = fdmex->LoadModel(aircraft_path, engine_path, systems_path, aircraft_model, false);
     Wingspan = fgGetDouble("/fdm/jsbsim/metrics/bw-ft");
@@ -660,8 +668,9 @@ void FGJSBsim::update(double dt)
 
     // Apply alpha/beta rates AFTER Run, because Auxiliary::Run() zeros
     // adot/bdot and recomputes from in.vUVWdot (stale in DCS mode).
-    Auxiliary->Setadot(pending_adot);
-    Auxiliary->Setbdot(pending_bdot);
+
+    alpha_dot->setDoubleValue(pending_adot);
+    beta_dot->setDoubleValue(pending_bdot);
 
     if (!success) {
         crashed = true;
@@ -1812,9 +1821,9 @@ void FGJSBsim::set_current_state(double ax,	//linear acceleration component in w
     double quaternion_w	//orientation quaternion components in world coordinate system
 )
 {
-    Auxiliary->SetNx(ax * METERS_TO_FEET);
-    Auxiliary->SetNz(ay * METERS_TO_FEET);
-    Auxiliary->SetNy(az * METERS_TO_FEET);
+    nx->setDoubleValue(ax * METERS_TO_FEET);
+    nz->setDoubleValue(ay * METERS_TO_FEET);
+    ny->setDoubleValue(az * METERS_TO_FEET);
 }
 static double Magnitude(double xv, double yv, double zv)
 {
