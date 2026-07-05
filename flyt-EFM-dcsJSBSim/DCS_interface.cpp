@@ -461,8 +461,15 @@ void DCS_interface::initialize(FGJSBsim * _model)
             bool   hasFixedValue = cmd->hasChild("value");
             double fixedValue    = cmd->getDoubleValue("value", 0.0);
 
+            // A <toggle> element means "flip the property 0<->1 once per
+            // press", where its value is the threshold the incoming command
+            // value must reach to count as pressed (handles both 0..1..0 and
+            // 0..100..0 style pulses/ramps). Takes precedence over <value>.
+            bool   isToggle        = cmd->hasChild("toggle");
+            double toggleThreshold = cmd->getDoubleValue("toggle", 1.0);
+
             commands.AddItem(_model, icmd, display_name, prop, factor, offset, clipMin, clipMax,
-                             hasFixedValue, fixedValue);
+                             hasFixedValue, fixedValue, isToggle, toggleThreshold);
         }
     }
 }

@@ -561,14 +561,18 @@ class CommandItem
     double clipMax;
     bool   hasFixedValue;
     double fixedValue;
+    bool   isToggle;
+    double toggleOnValue;
 
 public:
     CommandItem(FGJSBsim* model, int command, const std::string& prop,
                 double factor, double offset, double clipMin, double clipMax,
-                bool hasFixedValue, double fixedValue)
+                bool hasFixedValue, double fixedValue,
+                bool isToggle, double toggleOnValue)
         : command(command), property(prop), factor(factor), offset(offset),
           clipMin(clipMin), clipMax(clipMax),
-          hasFixedValue(hasFixedValue), fixedValue(fixedValue)
+          hasFixedValue(hasFixedValue), fixedValue(fixedValue),
+          isToggle(isToggle), toggleOnValue(toggleOnValue)
     {
         node = model->PropertyManager->GetNode(prop, true);
     }
@@ -578,6 +582,13 @@ public:
     void Apply(float value) const
     {
         if (!node) return;
+        if (isToggle) {
+            // DCS sends just the event and not the value so flip the 
+            // property between 0 and toggleOnValue.
+            double current = node->getDoubleValue();
+            node->setDoubleValue(current >= toggleOnValue / 2.0 ? 0.0 : toggleOnValue);
+            return;
+        }
         double out;
         if (hasFixedValue) {
             out = fixedValue;
@@ -615,19 +626,23 @@ public:
     void AddItem(FGJSBsim* model, int command, const std::string& display_name,
                  const std::string& prop,
                  double factor, double offset, double clipMin, double clipMax,
-                 bool hasFixedValue, double fixedValue)
+                 bool hasFixedValue, double fixedValue,
+                 bool isToggle = false, double toggleOnValue = 1.0)
     {
-        if (hasFixedValue)
+        if (isToggle)
+            printf("Command:: %d (%s) -> %s toggle 0<->%.3f\n", command, display_name.c_str(), prop.c_str(), toggleOnValue);
+        else if (hasFixedValue)
             printf("Command:: %d (%s) -> %s = %.3f\n", command, display_name.c_str(), prop.c_str(), fixedValue);
         else
             printf("Command:: %d (%s) -> %s (x%.3f +%.3f clip[%.3g,%.3g])\n",
                    command, display_name.c_str(), prop.c_str(), factor, offset, clipMin, clipMax);
         items.emplace(command, CommandItem(model, command, prop, factor, offset,
-                                           clipMin, clipMax, hasFixedValue, fixedValue));
+                                           clipMin, clipMax, hasFixedValue, fixedValue,
+                                           isToggle, toggleOnValue));
         // Record for instruments enumeration; deduplicate by icommand (first binding wins for display)
         for (auto& e : registry) { if (e.icommand == command) return; }
         registry.push_back({
-            command, display_name, hasFixedValue, (float)fixedValue,
+            command, display_name, hasFixedValue || isToggle, isToggle ? (float)toggleOnValue : (float)fixedValue,
             (clipMin > -1e15) ? (float)clipMin : -1.0f,
             (clipMax <  1e15) ? (float)clipMax :  1.0f,
             prop
