@@ -157,12 +157,25 @@ e.g.
 * efm\Systems\YOURFCS.xml
 * efm\Systems\other-system.xml
 
+# Autotest (QTG-style regression validation)
+
+The autotest system in `autotest/` is a **QTG** (Qualification Test Guide) inspired regression testing framework for JSBSim aircraft models. It runs `JSBSim.exe` directly against the aircraft's own JSBSim scripts — not the acEFM DLL or TestPlane — so it exercises the model in isolation from the DCS bridge. This currently requires our JSBSim fork's `JSBSim.exe`, which accepts the `--aircraft-path` / `--engine-path` / `--systems-path` / `--init-path` / `--property` command-line options the runner passes; these are the subject of an outstanding merge request upstream, so a stock JSBSim build won't yet work until either that lands or you build from our fork. It follows the same logic as real QTG practice — golden-run or flight-test reference data, defined tolerances, pass/fail reporting — without claiming full Level D qualification. The name and approach trace back to **ATG**, the autotest ground software installed on Air France's Vilgenis B737-228 simulator in 1988: the simulator flew a scripted profile driven by "Stela" test source files under the "Tardis" runner, and engineers checked strip-chart output against transparent tolerance overlays. This system is the same idea, done digitally.
+
+What it can do:
+* Drive JSBSim through a scripted profile — initial conditions, events, control inputs — using JSBSim's own script/event system rather than a custom scripting language.
+* Assert discrete pass/fail conditions with JSBSim `<check>` elements.
+* Compare output CSVs column-by-column against a committed baseline. Each property passes if it satisfies an absolute tolerance (`tol_abs`), a relative tolerance (`tol_rel`), or either — resolved through a four-level hierarchy (global default → global pattern match → per-test default → per-test property).
+* Establish new baselines with `--promote` after a reviewed, intentional model change.
+* Generate reports in text (terminal), XML (schema-validated, renders directly in a browser via XSLT), and PDF (Apache FOP, ATA-style document control block), plus comparison plots overlaying baseline and output with the tolerance band — the digital equivalent of the transparent overlay on a strip chart.
+
+Run via `autotest/run_validation.py --aircraft <AircraftMod>` (JSBSim.exe is auto-located from the build tree or PATH, or pass `--jsbsim <path>` explicitly); see `autotest/CLAUDE.md` for full config and workflow details.
+
+![Autotest QTG-style report example.](Documentation/images/F-15-autotest.png)
+
 # SYMON
 
-Symon permits the inspection and modifications of all properties at run time. Your EFM\jsbsim-model.xml must have the following 
-```
- <input port="1137"/>
-```
+Symon permits the inspection and modifications of all properties at run time. acEFM opens the property inspection port (1137) itself on startup, so no `<input port="1137"/>` entry is needed in your JSBSim model XML.
+
 Symon must be connected after DCS has loaded your model (and the debug window has appeared). Once connected you should use the "reload" button to populate the list of properties. Once populated you can double click a property on the left window to include it on the right.
 
-![Symon GUI image.](https://i.imgur.com/QaZcFLd.png)
+![Symon GUI image.](Documentation/images/symon.png)
