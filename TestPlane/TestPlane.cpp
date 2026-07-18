@@ -11,6 +11,11 @@
 #include <stdlib.h>
 using namespace std;
 
+// Keeps the bridge-callback recorder off in TestPlane regardless of the
+// acefm/debug-record property, so a replay can never truncate the recording it
+// is reading (the recorder writes to the fixed path the replay reads from).
+extern "C" __declspec(dllimport) void acefm_suppress_debug_record(void);
+
     int main(int argc, char **argv)
 {
     
@@ -71,10 +76,12 @@ using namespace std;
     }
     int frames_to_run = -1;
     if (userPath == "check") {
+        acefm_suppress_debug_record();
         frames_to_run = 20;
         userPath = argv[2];
     }
     if (userPath == "replay") {
+        acefm_suppress_debug_record();
         // Replay a recorded bridge callback log through the live bridge.
         // Usage: TestPlane.exe replay <path-to-dcs-bridge-log.csv>
         // The bridge always uses Run(dcsModels) exactly as it does in live DCS.

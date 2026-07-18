@@ -81,6 +81,7 @@ static double served_moi_z_delta_kgm2   = 0;
 // ============================================================================
 static FILE*          rec_file      = nullptr;
 static bool           rec_enabled   = false;
+static bool           rec_suppressed = false;
 static bool           rec_qpc_init  = false;
 static LARGE_INTEGER  rec_qpc_freq;
 static int            rec_check_ctr = 0;
@@ -109,7 +110,8 @@ static bool rec_active()
 {
     if ((++rec_check_ctr & 0x3F) == 0) {
         FGJSBsim* m = get_model();
-        bool want = m && (m->fgGetDouble("/fdm/jsbsim/acefm/debug-record") != 0.0);
+        bool want = !rec_suppressed && m
+                    && (m->fgGetDouble("/fdm/jsbsim/acefm/debug-record") != 0.0);
         if (want && !rec_file) {
             rec_file = fopen(REC_LOG_PATH, "w");
             if (rec_file) {
@@ -600,6 +602,16 @@ extern "C" __declspec(dllexport) double acefm_get_command_readback(int icommand)
     return dcs ? dcs->commands.Readback(icommand) : 0.0;
 }
 
+// Disable the bridge-callback recorder for this process regardless of the
+// acefm/debug-record property. TestPlane's replay and check modes call this so
+// a replayed session can never truncate the recording it is reading: the
+// recorder writes to the same fixed path the replay reads from.
+extern "C" __declspec(dllexport) void acefm_suppress_debug_record(void)
+{
+    rec_suppressed = true;
+    rec_close();
+}
+
 
 void ed_fm_add_local_force(double &x, double &y, double &z, double &pos_x, double &pos_y, double &pos_z)
 {
@@ -815,10 +827,6 @@ void ed_fm_set_current_state_body_axis(
     double beta_rads	//AoS radians
 )
 {
-    static int init = 0;
-    static double last_alpha_rads;
-    static double last_beta_rads;
-
     FGJSBsim *model = get_model();
     rec_state_body(ax, ay, az, vx, vy, vz, wind_vx, wind_vy, wind_vz,
                    omegadotx, omegadoty, omegadotz, omegax, omegay, omegaz,
