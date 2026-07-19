@@ -258,6 +258,7 @@
   <ItemGroup>
     <ClInclude Include="Aircraft.h" />
     <ClInclude Include="DCS_interface.h" />
+    <ClInclude Include="iCommands.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="exception.hxx" />
     <ClInclude Include="fm_math.h" />

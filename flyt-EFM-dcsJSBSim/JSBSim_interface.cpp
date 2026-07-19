@@ -19,6 +19,8 @@
 #include "models/FGInertial.h"
 #include "models/FGAtmosphere.h"
 #include "models/FGMassBalance.h"
+#include "models/FGExternalReactions.h"
+#include "input_output/FGXMLElement.h"
 #include "models/FGAerodynamics.h"
 #include "models/FGLGear.h"
 #include "models/FGGroundReactions.h"
@@ -229,7 +231,6 @@ void FGJSBsim::initDebugNodes()
     dbg.qbar            = get("/fdm/jsbsim/acefm/debug/qbar-psf");
     dbg.vt_fps          = get("/fdm/jsbsim/acefm/debug/vt-fps");
     dbg.vt_ms           = get("/fdm/jsbsim/acefm/debug/vt-ms");
-    dbg.vc_kts          = get("/fdm/jsbsim/acefm/debug/vc-kts");
     dbg.bi2vel          = get("/fdm/jsbsim/acefm/debug/bi2vel");
     dbg.ci2vel          = get("/fdm/jsbsim/acefm/debug/ci2vel");
     dbg.p               = get("/fdm/jsbsim/acefm/debug/p-radsec");
@@ -303,8 +304,96 @@ void FGJSBsim::init()
     // DCS also owns the wind
     Winds->SetTurbType(JSBSim::FGWinds::ttNone);
 
+    init_gear_reactions();
 
     SG_LOG(SG_FLIGHT, SG_INFO, "  Initialized JSBSim with:");
+}
+
+/******************************************************************************/
+
+// Add DCS computed gear forces
+//
+// JSBSim FGAccelerations computes vBodyAccel = in.Force / in.Mass, where in.Force is
+// the sum of all forces, which usually includes gear except that DCS does all of the ground
+// handling. Net result is that with the aircraft on the ground the load factors read zero because
+// there is no force opposing gravity in the JSBSim side - except of course the aircraft remains where
+// it should because of state propagation injection.
+// 
+// The fix is to add external forces at the right place for each gear element and to set these to
+// the force that DCS has calculated.
+//
+// In an acEFM aircraft <external_reactions> probably best left empty (e.g. hook, launch) because
+// there isn't currently a mechanism to inject these forces into DCS.
+void FGJSBsim::init_gear_reactions(void)
+{
+    using JSBSim::Element;
+
+    static const char* axis[3] = { "x", "y", "z" };
+
+    // The magnitude properties must exist before the forces are loaded: each
+    // <function> resolves its <property> by name, and FGPropertyValue throws if
+    // it is not already in the tree.
+    for (int strut = 0; strut < gear_strut_count; strut++)
+        for (int a = 0; a < 3; a++)
+            fgSetDouble(("/fdm/jsbsim/acefm/gear/unit[" + std::to_string(strut)
+                         + "]/force-" + axis[a] + "-lbs").c_str(), 0.0);
+
+    // SGSharedPtr: the Element tree is reference counted and released when this
+    // goes out of scope.  FGExternalForce keeps only what it parses out of it.
+    SGSharedPtr<Element> reactions = new Element("external_reactions");
+
+    for (int strut = 0; strut < gear_strut_count; strut++) {
+        for (int a = 0; a < 3; a++) {
+            const std::string name = "acefm-gear-" + std::to_string(strut) + "-" + axis[a];
+
+            SGSharedPtr<Element> force = new Element("force");
+            force->AddAttribute("name", name);
+            force->AddAttribute("frame", "BODY");
+
+            // magnitude: <function><property>...</property></function>
+            SGSharedPtr<Element> function = new Element("function");
+            SGSharedPtr<Element> property = new Element("property");
+            property->AddData("acefm/gear/unit[" + std::to_string(strut) + "]/force-"
+                              + axis[a] + "-lbs");
+            property->SetParent(function);
+            function->AddChildElement(property);
+            function->SetParent(force);
+            force->AddChildElement(function);
+
+            // unit direction along this body axis
+            SGSharedPtr<Element> direction = new Element("direction");
+            for (int d = 0; d < 3; d++) {
+                SGSharedPtr<Element> c = new Element(axis[d]);
+                c->AddData(d == a ? "1.0" : "0.0");
+                c->SetParent(direction);
+                direction->AddChildElement(c);
+            }
+            direction->SetParent(force);
+            force->AddChildElement(direction);
+
+            // acting point; the real one is written every frame from DCS
+            SGSharedPtr<Element> location = new Element("location");
+            location->AddAttribute("unit", "IN");
+            for (int d = 0; d < 3; d++) {
+                SGSharedPtr<Element> c = new Element(axis[d]);
+                c->AddData("0.0");
+                c->SetParent(location);
+                location->AddChildElement(c);
+            }
+            location->SetParent(force);
+            force->AddChildElement(location);
+
+            force->SetParent(reactions);
+            reactions->AddChildElement(force);
+        }
+    }
+
+    if (!fdmex->GetExternalReactions()->Load(reactions)) {
+        printf("acEFM: failed to load the gear external reactions\n");
+        return;
+    }
+
+    printf("acEFM: gear external reactions loaded for %d strut(s)\n", gear_strut_count);
 }
 
 /******************************************************************************/
@@ -647,7 +736,6 @@ void FGJSBsim::set_current_state_body_axis(
         // DCS-provided Vt for debug logging (Auxiliary will compute its own from vAeroUVW)
         double Vt_ms = Magnitude(vx - wind_vx, vy - wind_vy, vz - wind_vz);
         double Vt_fps = Vt_ms * METER_TO_FEET_FACTOR;
-        double VcKts = Vt_fps / 1.68781;
         double twovel = Vt_fps * 2;
         double qbar_psf = 0.5 * (ro_kgm3 * KGM3_TO_SLUGS_FT3) * Vt_fps * Vt_fps;
         double bi2vel = (twovel > JSB_NEARLY_ZERO) ? Wingspan / twovel : 0;
@@ -659,7 +747,6 @@ void FGJSBsim::set_current_state_body_axis(
         dbg.qbar->setDoubleValue(qbar_psf);
         dbg.vt_fps->setDoubleValue(Vt_fps);
         dbg.vt_ms->setDoubleValue(Vt_ms);
-        dbg.vc_kts->setDoubleValue(VcKts);
         dbg.bi2vel->setDoubleValue(bi2vel);
         dbg.ci2vel->setDoubleValue(ci2vel);
         dbg.p->setDoubleValue(omegax);

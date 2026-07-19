@@ -211,7 +211,6 @@ public:
         SGPropertyNode* qbar;
         SGPropertyNode* vt_fps;
         SGPropertyNode* vt_ms;
-        SGPropertyNode* vc_kts;
         SGPropertyNode* bi2vel;
         SGPropertyNode* ci2vel;
         SGPropertyNode* p;
@@ -238,6 +237,12 @@ public:
 
     void init_gear(void);
     void update_gear(void);
+
+    // Carry DCS's gear reaction into JSBSim's force sum via <external_reactions>,
+    // so the load factors, the pilot-station accelerations, alphadot and betadot
+    // are all correct on the ground.  See JSBSim_interface.cpp.
+    static const int gear_strut_count = 3;
+    void init_gear_reactions(void);
 
     void update_external_forces(double t_off);
 };
