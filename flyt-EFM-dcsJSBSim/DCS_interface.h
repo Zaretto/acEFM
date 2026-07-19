@@ -163,7 +163,56 @@ extern "C" {
     );
 
     DLL_API void ed_fm_set_command(int command, float value);
+
+    /*
+    Trace-only entry points.  Exported so DCS actually calls them and the trace
+    can record when and with what; each returns the neutral value that
+    reproduces the behaviour of not exporting it at all.  These are the sites
+    the remaining wiring work will fill in.
+
+    NOTE: ed_fm_add_global_force / _moment and all four *_component variants are
+    deliberately left unexported.  DCS may prefer a component force path if it
+    finds one, which would silently stop it taking our forces.
+    */
+    DLL_API void   ed_fm_release();
+    DLL_API void   ed_fm_cold_start();
+    DLL_API void   ed_fm_hot_start();
+    DLL_API void   ed_fm_hot_start_in_air();
+    DLL_API bool   ed_fm_make_balance(double & ax, double & ay, double & az,
+                                      double & vx, double & vy, double & vz,
+                                      double & omegadotx, double & omegadoty, double & omegadotz,
+                                      double & omegax, double & omegay, double & omegaz,
+                                      double & yaw, double & pitch, double & roll);
+    DLL_API double ed_fm_get_shake_amplitude();
+    DLL_API bool   ed_fm_enable_debug_info();
+    DLL_API size_t ed_fm_debug_watch(int level, char * buffer, size_t maxlen);
+    DLL_API void   ed_fm_on_planned_failure(const char * failure_id);
+    DLL_API void   ed_fm_on_damage(int element, double element_integrity_factor);
+    DLL_API void   ed_fm_repair();
+    DLL_API bool   ed_fm_need_to_be_repaired();
+    DLL_API void   ed_fm_set_immortal(bool value);
+    DLL_API void   ed_fm_unlimited_fuel(bool value);
+    DLL_API void   ed_fm_set_easy_flight(bool value);
+    DLL_API void   ed_fm_set_property_numeric(const char * property_name, float value);
+    DLL_API void   ed_fm_set_property_string(const char * property_name, const char * value);
+    DLL_API bool   ed_fm_pop_simulation_event(ed_fm_simulation_event & out);
+    DLL_API bool   ed_fm_push_simulation_event(const ed_fm_simulation_event & in);
+    DLL_API void   ed_fm_refueling_add_fuel(double fuel);
+    DLL_API bool   ed_fm_LERX_vortex_update(unsigned idx, LERX_vortex & out);
+    DLL_API void   ed_fm_wind_vector_field_update_request(wind_vector_field & in_out);
+    DLL_API void   ed_fm_wind_vector_field_done();
+
+    /* Preferred over ed_fm_set_draw_args from 2.5.7 onward.  It carries a straight
+       float array rather than the wider EdDrawArgument union. */
+    DLL_API void   ed_fm_set_draw_args_v2(float * drawargs, size_t size);
 }
+
+/* Entry-point call tracing.  Implemented in DCS_interface.cpp; see the comment
+   there for the format and the /fdm/jsbsim/acefm/debug-calls property. */
+void trace_call(const char * name);
+void trace_callf(const char * name, const char * fmt, ...);
+void trace_frame(void);
+void trace_close(void);
 template <typename T, typename T1> class AnimateItem
 {
 protected:
@@ -519,22 +568,38 @@ public:
         printf("DrawArg:: %d -> %s (%.1f) ~%.4f\n", drawArgId, prop.c_str(), factor, delta);
         items.push_back(new AnimateItem<int, float>(drawArgId, model->PropertyManager->GetNode(prop), prop, factor, delta, offset));
     }
-    void Update(FGJSBsim* model, EdDrawArgument* da, size_t size)
+    // DCS supplies the draw-arg array in one of two representations: an
+    // EdDrawArgument array (ed_fm_set_draw_args) or a straight float array
+    // (ed_fm_set_draw_args_v2, preferred from 2.5.7).  They are not layout
+    // compatible, because EdDrawArgument is a union carrying a void* and so is
+    // wider than a float.  Only the element type differs, so the selection and
+    // delta logic is shared here and the assignment adapts: EdDrawArgument
+    // supplies operator=(float).
+    //
+    // NOTE: AnimateItem::UpdateNeeded() consumes the change it reports, so this
+    // must be called once per frame.  If DCS ever calls both entry points in the
+    // same frame, the second array would be left unwritten.
+    template <typename T>
+    void UpdateArgs(T* da, size_t size)
     {
         for (auto&& item : items) {
-            if (item->UpdateNeeded()) {
-                auto drawArgId = item->Get();
-                if (drawArgId >= size) {
-                    printf("DrawArg:: %d invalid (max %d)\n", drawArgId, size);
-                } else {
-                    auto value = item->GetValue();
-                    da[drawArgId].f = value;
-                    if (DebugNode != nullptr && DebugNode->getBoolValue())
-                        printf("DrawArg:: %d = %.4f [%s]\n", drawArgId, value, item->GetProperty().c_str());
-                }
+            if (!item->UpdateNeeded()) continue;
+
+            auto drawArgId = item->Get();
+            if (drawArgId < 0 || (size_t)drawArgId >= size) {
+                printf("DrawArg:: %d invalid (max %zu)\n", drawArgId, size);
+                continue;
             }
+
+            auto value = item->GetValue();
+            da[drawArgId] = value;
+            if (DebugNode != nullptr && DebugNode->getBoolValue())
+                printf("DrawArg:: %d = %.4f [%s]\n", drawArgId, value, item->GetProperty().c_str());
         }
     }
+
+    void Update(FGJSBsim* model, EdDrawArgument* da, size_t size) { UpdateArgs(da, size); }
+    void Update(FGJSBsim* model, float* da, size_t size)          { UpdateArgs(da, size); }
 };
 // ----------------------------------------------------------------------------
 // CommandItem / CommandMap
@@ -685,34 +750,49 @@ public:
 // Checked first in ed_fm_get_param(); the existing hardcoded handlers run
 // only if the index is not registered here.
 // ----------------------------------------------------------------------------
+// Config-driven mapping of JSBSim properties to the parameters DCS asks for
+// through ed_fm_get_param.  Declared in aceFMconfig.xml under <sim><params>.
+//
+//   out = value * factor + offset
+//
+// The offset is what makes an inverted flag expressible, which a factor alone
+// cannot do.  A model that publishes a failure ("anti-skid inoperative") can
+// answer a DCS parameter that wants the opposite ("anti-skid enabled") with
+// factor -1 and offset 1.  The same applies to UP_LOCK against a gear position.
 class ParamMap
 {
     struct Entry {
         SGPropertyNode* node;
         double factor;
+        double offset;
     };
     std::map<unsigned, Entry> items;
 
 public:
-    void AddItem(FGJSBsim* model, unsigned index, const std::string& prop, double factor = 1.0)
+    void AddItem(FGJSBsim* model, unsigned index, const std::string& prop,
+                 double factor = 1.0, double offset = 0.0)
     {
-        printf("Param:: %u -> %s (x%.3f)\n", index, prop.c_str(), factor);
-        items[index] = { model->PropertyManager->GetNode(prop, true), factor };
+        if (offset != 0.0)
+            printf("Param:: %u -> %s (x%.3f %+.3f)\n", index, prop.c_str(), factor, offset);
+        else
+            printf("Param:: %u -> %s (x%.3f)\n", index, prop.c_str(), factor);
+        items[index] = { model->PropertyManager->GetNode(prop, true), factor, offset };
     }
 
     // Like AddItem but silently skips if the index is already registered.
     // Used for built-in defaults so that XML entries always take priority.
-    void AddDefault(FGJSBsim* model, unsigned index, const std::string& prop, double factor = 1.0)
+    void AddDefault(FGJSBsim* model, unsigned index, const std::string& prop,
+                    double factor = 1.0, double offset = 0.0)
     {
         if (items.count(index) == 0)
-            AddItem(model, index, prop, factor);
+            AddItem(model, index, prop, factor, offset);
     }
 
     bool TryGet(unsigned index, double& out) const
     {
         auto it = items.find(index);
         if (it == items.end() || !it->second.node) return false;
-        out = it->second.node->getDoubleValue() * it->second.factor;
+        out = it->second.node->getDoubleValue() * it->second.factor + it->second.offset;
         return true;
     }
 };

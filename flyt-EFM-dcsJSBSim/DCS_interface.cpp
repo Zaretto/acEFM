@@ -6,8 +6,16 @@
 #include "math/FGQuaternion.h"
 #include "models/FGPropulsion.h"
 #include "models/FGMassBalance.h"
+#include "models/FGGroundReactions.h"
+#include "models/FGLGear.h"
 #include "iCommands.h"   // DCS input command codes (from DCS-OpenSource/LuaToolsPlugin)
 #include <string>
+#include <vector>
+#include <set>
+#include <array>
+#include <cstring>
+#include <cstdarg>
+#include <cassert>
 
 using namespace DCS;     // bring iCommand* identifiers into scope
 Vec3d center_of_mass;                    // m
@@ -51,7 +59,7 @@ int frame_count = 0;
 int nullf() { return 0; }
 
 // Last-reported mass/CG/inertia from DCS (via ed_fm_set_current_mass_state),
-// stored here for reference (DCS owns this state; we don't push it into JSBSim).
+// stored here for reference (DCS is responsible for this state; we don't push it into JSBSim).
 static double last_dcs_mass_kg          = 0;
 static double last_dcs_moi_x_kgm2       = 0;
 static double last_dcs_moi_y_kgm2       = 0;
@@ -204,6 +212,198 @@ void rec_sim(double dt)
     fflush(rec_file);  // flush every tick so the log is usable after a crash
 }
 
+// ============================================================================
+// Entry-point call tracing
+// ----------------------------------------------------------------------------
+// Logs every ed_fm_* entry point DCS calls, in order, so the host's execution
+// order and call frequency can be established from a real session rather than
+// inferred from the headers.
+//
+// Entries are buffered in memory from the very first call, because DCS calls
+// ed_fm_set_plugin_data_install_path and ed_fm_configure before the JSBSim model
+// (and therefore the property tree) exists. The buffer is resolved on the first
+// ed_fm_simulate, when /fdm/jsbsim/acefm/debug-calls decides its fate:
+//
+//   0     off; the buffer is discarded (default)
+//   N > 0 log every call for the first N frames, then log only what is new
+//   -1    log every call for the whole session (large: get_param alone runs to
+//         tens of calls per frame)
+//
+// The N > 0 form is the useful one for a whole sortie. The first N frames
+// establish the steady-state call order; after that the per-frame traffic is
+// already known and only novelty matters, so a call survives only if:
+//
+//   * its name has not been seen before (ed_fm_release, the start hooks,
+//     ed_fm_on_damage and the rest first appear long after frame N), or
+//   * it is ed_fm_get_param with an index not asked for before, which builds the
+//     full set of parameters DCS actually wants, or
+//   * its name is event-driven rather than per-frame (below), where every
+//     occurrence carries information.
+//
+// Line format: seq,time_us,frame,name,detail
+// ============================================================================
+static const char*  TRC_LOG_PATH = "c:/temp/acefm-calltrace.csv";
+static const size_t TRC_BUFFER_MAX = 8192;
+
+// Names worth logging every time they occur, even after the frame limit: they
+// fire on events rather than per frame, so each call is a distinct fact. The
+// exception is ed_fm_suspension_feedback, which is per strut per frame but only
+// while there is ground contact, which is exactly what we are trying to see.
+static const char* TRC_ALWAYS[] = {
+    "ed_fm_suspension_feedback",
+    "ed_fm_set_command",
+    "ed_fm_on_damage",
+    "ed_fm_on_planned_failure",
+    "ed_fm_set_property_numeric",
+    "ed_fm_set_property_string",
+    "ed_fm_push_simulation_event",
+    "ed_fm_refueling_add_fuel",
+    "ed_fm_set_internal_fuel",
+    "ed_fm_set_external_fuel",
+    "ed_fm_release",
+    "ed_fm_repair",
+};
+
+static FILE*                    trc_file = nullptr;
+static std::vector<std::string> trc_buffer;
+static std::set<std::string>    trc_seen;      // names, and get_param indices
+static std::map<unsigned,double> trc_last_param;  // last logged value, gear block only
+static long long                trc_seq = 0;
+static long long                trc_frame_no = 0;
+static long long                trc_dropped = 0;
+static int                      trc_limit = 0;
+
+enum TrcState { TRC_UNRESOLVED, TRC_ON, TRC_NOVEL, TRC_OFF };
+static TrcState trc_state = TRC_UNRESOLVED;
+
+// Should this call be logged now that the frame limit has passed?
+static bool trc_is_novel(const char* name, const char* detail)
+{
+    for (const char* always : TRC_ALWAYS)
+        if (strcmp(name, always) == 0) return true;
+
+    if (detail && strcmp(name, "ed_fm_get_param") == 0) {
+        unsigned index = 0;
+        double   value = 0;
+        if (sscanf(detail, "index=%u value=%lf", &index, &value) == 2) {
+            // The gear block is what a ground test is about, and it only changes
+            // when the pilot brakes or steers, so log every change of it. The rest
+            // (engine RPM, temperatures) changes every frame and would drown the
+            // file, so record only the first time DCS asks for each index.
+            const bool gear = index >= ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT
+                           && index <= ED_FM_ANTI_SKID_ENABLE;
+            if (gear) {
+                auto it = trc_last_param.find(index);
+                if (it != trc_last_param.end() && it->second == value) return false;
+                trc_last_param[index] = value;
+                return true;
+            }
+        }
+        // Keyed on the index alone: the value changes and must not defeat this.
+        std::string key(name);
+        key += detail;
+        const char* space = strchr(detail, ' ');
+        if (space) key = std::string(name) + std::string(detail, space - detail);
+        return trc_seen.insert(key).second;
+    }
+
+    return trc_seen.insert(std::string(name)).second;
+}
+
+static void trc_emit(const char* name, const char* detail)
+{
+    if (trc_state == TRC_OFF) return;
+
+    if (trc_state == TRC_NOVEL && !trc_is_novel(name, detail)) {
+        ++trc_dropped;
+        return;
+    }
+
+    char line[512];
+    snprintf(line, sizeof(line), "%lld,%lld,%lld,%s,%s\n",
+             ++trc_seq, rec_now_us(), trc_frame_no, name, detail ? detail : "");
+
+    if (trc_state == TRC_UNRESOLVED) {
+        if (trc_buffer.size() < TRC_BUFFER_MAX) trc_buffer.push_back(line);
+    } else if (trc_file) {
+        fputs(line, trc_file);
+    }
+}
+
+void trace_call(const char* name)
+{
+    trc_emit(name, nullptr);
+}
+
+void trace_callf(const char* name, const char* fmt, ...)
+{
+    if (trc_state == TRC_OFF) return;
+
+    char detail[384];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(detail, sizeof(detail), fmt, ap);
+    va_end(ap);
+
+    trc_emit(name, detail);
+}
+
+// Called at the top of every ed_fm_simulate, where the model is guaranteed to
+// exist. Resolves the buffered pre-init calls on the first frame and enforces
+// the frame limit thereafter.
+void trace_frame(void)
+{
+    ++trc_frame_no;
+
+    if (trc_state == TRC_UNRESOLVED) {
+        FGJSBsim* m = get_model();
+        trc_limit = m ? (int)m->fgGetDouble("/fdm/jsbsim/acefm/debug-calls") : 0;
+
+        if (trc_limit != 0) trc_file = fopen(TRC_LOG_PATH, "w");
+        if (trc_file) {
+            fprintf(trc_file, "# acEFM entry-point call trace\n");
+            fprintf(trc_file, "seq,time_us,frame,name,detail\n");
+            for (const auto& line : trc_buffer) fputs(line.c_str(), trc_file);
+            fflush(trc_file);
+            trc_state = TRC_ON;
+        } else {
+            trc_state = TRC_OFF;
+        }
+
+        trc_buffer.clear();
+        trc_buffer.shrink_to_fit();
+    }
+
+    if (trc_state == TRC_OFF || !trc_file) return;
+
+    // Flush per frame rather than per call: the session is long and a crash must
+    // not lose the frame that caused it.
+    fflush(trc_file);
+
+    // Once the frame limit passes, the steady-state call order is established.
+    // Keep the file open for the rest of the session but log only novelty, so a
+    // whole sortie stays small enough to read.
+    if (trc_state == TRC_ON && trc_limit > 0 && trc_frame_no > trc_limit) {
+        fprintf(trc_file,
+                "# %d-frame call order established; logging only new calls,"
+                " new ed_fm_get_param indices and event-driven calls from here\n",
+                trc_limit);
+        trc_state = TRC_NOVEL;
+    }
+}
+
+// Close the trace cleanly. Called from ed_fm_release, which is the only point
+// at which DCS tells us the aircraft is finished with.
+void trace_close(void)
+{
+    if (!trc_file) return;
+    fprintf(trc_file, "# session end: %lld calls logged, %lld repeats dropped\n",
+            trc_seq, trc_dropped);
+    fclose(trc_file);
+    trc_file = nullptr;
+    trc_state = TRC_OFF;
+}
+
 static std::map<std::string, double> conversion_map = {
 {"METER_TO_FEET", 3.28084},
 {"FEET_TO_METER  ", 0.3048},
@@ -257,15 +457,30 @@ static void RegisterEngineDefaults(FGJSBsim* model, ParamMap& params, int engine
     }
 }
 
-// Build default ed_fm_get_param bindings for N gear units using standard
-// JSBSim gear property paths.  Called after XML <params> so aircraft overrides win.
+// Build default ed_fm_get_param bindings for the gear, using standard JSBSim
+// property paths.  Called after XML <params> so aircraft overrides win.
 //
-// Default mappings:
-//   GEAR_POST_STATE -> gear/unit[N]/pos-norm  (0=retracted, 1=extended)
-//   DOWN_LOCK       -> gear/unit[N]/pos-norm  (1.0 at full extension; approximate)
+// DCS is responsible for the suspension, but it cannot solve it without knowing what the gear
+// is doing, so it polls us for the state of every strut each frame.  Answering
+// zero to the brake moment means the aircraft cannot be stopped.
 //
-// UP_LOCK has no clean default (inversion can't be expressed as a factor);
-// aircraft that need it should supply it via <params> in aceFMconfig.xml.
+// The brake mapping does not need configuring, because JSBSim already holds it.
+// Each gear unit knows its own brake group (FGLGear::GetBrakeGroup), and FGFCS
+// ties the three brake channels, so walking the units gives the binding.
+//
+//   GEAR_POST_STATE       -> gear/unit[N]/pos-norm  (0 retracted, 1 extended)
+//   RELATIVE_BRAKE_MOMENT -> the brake channel of unit N's own group
+//   WHEEL_YAW             -> fcs/steer-pos-deg[N], for a steerable unit
+//
+// DCS polls two brake paths, so both are answered from the same channels:
+// the per-strut suspension brake moment, and the FC3 wheel brakes.
+//
+// Not defaulted, because JSBSim has no standard source: ANTI_SKID_ENABLE, the
+// brake chute, and WHEEL_SELF_ATTITUDE.  Supply them per aircraft with <params>.
+//
+// UP_LOCK and DOWN_LOCK are not defaulted either: an instrumented sortie shows
+// DCS never asks for them.
+//
 // Gear unit count from <sim><gear-count>; defaults to 3 (tricycle) if absent.
 static void RegisterGearDefaults(FGJSBsim* model, ParamMap& params, int gearCount)
 {
@@ -273,16 +488,65 @@ static void RegisterGearDefaults(FGJSBsim* model, ParamMap& params, int gearCoun
                                      - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
     static const unsigned POST_STATE = ED_FM_SUSPENSION_0_GEAR_POST_STATE
                                      - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
-    static const unsigned DOWN_LOCK  = ED_FM_SUSPENSION_0_DOWN_LOCK
+    static const unsigned WHEEL_YAW  = ED_FM_SUSPENSION_0_WHEEL_YAW
                                      - ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT;
 
+    // FGLGear::BrakeGroup -> the FGFCS channel that drives it.  A unit in no brake
+    // group gets no binding and reads zero, which is what DCS should hear for an
+    // unbraked wheel.
+    //
+    // NOTE: JSBSim maps both NOSE and TAIL onto bgCenter (FGLGear.cpp, "Nose brake
+    // is not supported by FGFCS"), so a nose wheel declared <brake_group>NOSE
+    // reports itself as centre-braked and picks up fcs/center-brake-cmd-norm here.
+    // That is faithful to what JSBSim believes, and harmless while nothing drives
+    // the centre channel, but an aircraft that does use it would find DCS braking
+    // its nose wheel.  Override that strut with <params> if it matters.
+    auto brake_channel = [](int group) -> const char* {
+        switch (group) {
+        case JSBSim::FGLGear::bgLeft:   return "/fdm/jsbsim/fcs/left-brake-cmd-norm";
+        case JSBSim::FGLGear::bgRight:  return "/fdm/jsbsim/fcs/right-brake-cmd-norm";
+        case JSBSim::FGLGear::bgCenter: return "/fdm/jsbsim/fcs/center-brake-cmd-norm";
+        default:                        return nullptr;
+        }
+    };
+
     printf("acEFM: RegisterGearDefaults for %d unit(s)\n", gearCount);
+
+    const int units = model->GroundReactions->GetNumGearUnits();
+
     for (int n = 0; n < gearCount; n++) {
         unsigned base = ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT + (unsigned)n * BLOCK;
         std::string p = "/fdm/jsbsim/gear/unit[" + std::to_string(n) + "]/";
+
         params.AddDefault(model, base + POST_STATE, p + "pos-norm", 1.0);
-        params.AddDefault(model, base + DOWN_LOCK,  p + "pos-norm", 1.0);
+
+        if (n >= units) continue;   // DCS has more struts than JSBSim models
+
+        auto gear = model->GroundReactions->GetGearUnit(n);
+
+        // RELATIVE_BRAKE_MOMENT is a fraction of the strut's maximum brake moment,
+        // which is what the JSBSim brake command already is.  It sits at the base
+        // of each suspension block, so its index is `base` itself.
+        if (const char* channel = brake_channel(gear->GetBrakeGroup()))
+            params.AddDefault(model, base, channel, 1.0);
+
+        // Steering angle.  NOTE: the units DCS wants for WHEEL_YAW are not stated
+        // in the API, so this is degrees until an instrumented taxi says otherwise.
+        if (gear->GetSteerable())
+            params.AddDefault(model, base + WHEEL_YAW,
+                              "/fdm/jsbsim/fcs/steer-pos-deg[" + std::to_string(n) + "]",
+                              1.0);
     }
+
+    // The FC3 wheel brakes, which DCS polls alongside the per-strut brake moment.
+    params.AddDefault(model, ED_FM_FC3_WHEEL_BRAKE_LEFT,
+                      "/fdm/jsbsim/fcs/left-brake-cmd-norm", 1.0);
+    params.AddDefault(model, ED_FM_FC3_WHEEL_BRAKE_RIGHT,
+                      "/fdm/jsbsim/fcs/right-brake-cmd-norm", 1.0);
+    params.AddDefault(model, ED_FM_FC3_WHEEL_BRAKE_COMMAND_LEFT,
+                      "/fdm/jsbsim/fcs/left-brake-cmd-norm", 1.0);
+    params.AddDefault(model, ED_FM_FC3_WHEEL_BRAKE_COMMAND_RIGHT,
+                      "/fdm/jsbsim/fcs/right-brake-cmd-norm", 1.0);
 }
 
 void DCS_interface::initialize(FGJSBsim * _model)
@@ -320,8 +584,9 @@ void DCS_interface::initialize(FGJSBsim * _model)
             }
             std::string prop = param->getStringValue("property");
             double factor = param->getDoubleValue("factor", 1.0);
+            double offset = param->getDoubleValue("offset", 0.0);
             if (!prop.empty())
-                params.AddItem(_model, idx, prop, factor);
+                params.AddItem(_model, idx, prop, factor, offset);
         }
     }
 
@@ -560,6 +825,10 @@ double ed_fm_get_param(unsigned index)
     if (local_debug >= 2)
         printf(" ed_fm_get_param %d = %f\n", index, paramValue);
 
+    // Trace the value, not just the index: what DCS is told is the whole point,
+    // and an unbound parameter answering zero looks identical to a bound one.
+    trace_callf("ed_fm_get_param", "index=%u value=%.6g", index, paramValue);
+
     return paramValue;
 }
 
@@ -613,12 +882,63 @@ extern "C" __declspec(dllexport) void acefm_suppress_debug_record(void)
 }
 
 
+// We provide the aerodynamic and propulsive force to the DCS integration. This
+// does not include gear forces (gear is retracted as DCS calculates this)
+// So we just provide the sum of these forces Name rather than using JSBSim's
+// computed value.
+//
+// ed_fm_add_local_force/ed_fm_add_local_moment run every physics step, so the
+// property nodes are resolved once (function-local statics) and read by
+// pointer thereafter instead of doing a property-tree name lookup per frame.
+struct AxisNodes
+{
+    SGPropertyNode* aero;
+    SGPropertyNode* prop;
+    SGPropertyNode* buoy;
+    double Sum() const { return aero->getDoubleValue() + prop->getDoubleValue() + buoy->getDoubleValue(); }
+};
+
+// axis_letters supplies the three property-path axis codes in index order,
+// e.g. "xyz" for forces (indices 0,1,2 -> x,y,z) or "lmn" for moments
+// (indices 0,1,2 -> l,m,n).
+static std::array<AxisNodes, 3> resolve_axis_nodes(FGJSBsim* model, const char* base, const char* axis_letters, const char* unit_suffix)
+{
+    assert(std::strlen(axis_letters) == 3 && "axis_letters must supply exactly 3 axis codes");
+    std::array<AxisNodes, 3> nodes;
+    for (int i = 0; i < 3; ++i) {
+        const std::string axis(1, axis_letters[i]);
+        nodes[i] = {
+            model->PropertyManager->GetNode(std::string(base) + axis + "-aero-" + unit_suffix, true),
+            model->PropertyManager->GetNode(std::string(base) + axis + "-prop-" + unit_suffix, true),
+            model->PropertyManager->GetNode(std::string(base) + axis + "-buoyancy-" + unit_suffix, true)
+        };
+    }
+    return nodes;
+}
+
+static double force_to_dcs(FGJSBsim* model, int axis)
+{
+    static std::array<AxisNodes, 3> nodes = resolve_axis_nodes(model, "/fdm/jsbsim/forces/fb", "xyz", "lbs");
+    return nodes[axis].Sum();
+}
+
+static double moment_to_dcs(FGJSBsim* model, int axis)
+{
+    static std::array<AxisNodes, 3> nodes = resolve_axis_nodes(model, "/fdm/jsbsim/moments/", "lmn", "lbsft");
+    return nodes[axis].Sum();
+}
+
+// Indices into the "xyz"/"lmn" resolve_axis_nodes() tables above.
+enum { AXIS_X = 0, AXIS_Y = 1, AXIS_Z = 2 };
+enum { AXIS_L = 0, AXIS_M = 1, AXIS_N = 2 };
+
 void ed_fm_add_local_force(double &x, double &y, double &z, double &pos_x, double &pos_y, double &pos_z)
 {
+    trace_call("ed_fm_add_local_force");
     FGJSBsim *model = get_model();
-    x = model->fgGetDouble("/fdm/jsbsim/forces/fbx-total-lbs") * LBS_TO_N;
-    y = -model->fgGetDouble("/fdm/jsbsim/forces/fbz-total-lbs") * LBS_TO_N;
-    z = model->fgGetDouble("/fdm/jsbsim/forces/fby-total-lbs") * LBS_TO_N;
+    x =  force_to_dcs(model, AXIS_X) * LBS_TO_N;
+    y = -force_to_dcs(model, AXIS_Z) * LBS_TO_N;
+    z =  force_to_dcs(model, AXIS_Y) * LBS_TO_N;
 
     pos_x = center_of_mass.x;
     pos_y = center_of_mass.y;
@@ -627,6 +947,7 @@ void ed_fm_add_local_force(double &x, double &y, double &z, double &pos_x, doubl
 
 void ed_fm_add_local_moment(double &x, double &y, double &z)
 {
+    trace_call("ed_fm_add_local_moment");
     FGJSBsim *model = get_model();
 
     // jsb
@@ -639,9 +960,9 @@ void ed_fm_add_local_moment(double &x, double &y, double &z)
     // y + up
     // z + right
 
-    x = model->fgGetDouble("/fdm/jsbsim/moments/l-total-lbsft") * LBSFT_TO_NM;
-    y = -model->fgGetDouble("/fdm/jsbsim/moments/n-total-lbsft") * LBSFT_TO_NM;
-    z = model->fgGetDouble("/fdm/jsbsim/moments/m-total-lbsft") * LBSFT_TO_NM;
+    x =  moment_to_dcs(model, AXIS_L) * LBSFT_TO_NM;
+    y = -moment_to_dcs(model, AXIS_N) * LBSFT_TO_NM;
+    z =  moment_to_dcs(model, AXIS_M) * LBSFT_TO_NM;
 }
 
 
@@ -677,6 +998,8 @@ void ed_fm_set_atmosphere(double h,	//altitude above sea level
     double wind_vz_ms	//components of velocity vector, including turbulence in world coordinate system
 )
 {
+    trace_callf("ed_fm_set_atmosphere", "h=%.3f t=%.3f a=%.3f ro=%.5f p=%.1f",
+                h, t, a, _ro_kgm3, p_Pa);
 #ifndef _DEBUG
     try
     {
@@ -749,6 +1072,7 @@ void ed_fm_set_current_mass_state(double mass,
     double moment_of_inertia_y,
     double moment_of_inertia_z)
 {
+   trace_callf("ed_fm_set_current_mass_state", "mass=%.3f", mass);
    rec_mass_in(mass,
                center_of_mass_x, center_of_mass_y, center_of_mass_z,
                moment_of_inertia_x, moment_of_inertia_y, moment_of_inertia_z);
@@ -795,6 +1119,7 @@ void ed_fm_set_current_state(double ax,	//linear acceleration component in world
     double quaternion_w	//orientation quaternion components in world coordinate system
 )
 {
+    trace_call("ed_fm_set_current_state");
     FGJSBsim *model = get_model();
     rec_state(ax, ay, az, vx, vy, vz, px, py, pz,
               omegadotx, omegadoty, omegadotz, omegax, omegay, omegaz,
@@ -827,6 +1152,7 @@ void ed_fm_set_current_state_body_axis(
     double beta_rads	//AoS radians
 )
 {
+    trace_call("ed_fm_set_current_state_body_axis");
     FGJSBsim *model = get_model();
     rec_state_body(ax, ay, az, vx, vy, vz, wind_vx, wind_vy, wind_vz,
                    omegadotx, omegadoty, omegadotz, omegax, omegay, omegaz,
@@ -870,8 +1196,7 @@ while (ed_fm_change_mass(delta_mass,x,y,z,piece_of_mass_MOI_x,piece_of_mass_MOI_
 //
 // DCS calls this in a loop after ed_fm_simulate, applying each returned delta
 // until the function returns false.  We use it to keep DCS's mass / moments of
-// inertia in step with JSBSim's MassBalance model, so the CSAS (which was
-// designed around JSBSim's inertia) and DCS's integrator agree on the plant.
+// inertia in step with JSBSim's MassBalance model.
 //
 // The entry.lua moment_of_inertia is the initial value DCS starts with.  Each
 // frame, we compute the current target (from JSBSim's MassBalance) and report
@@ -891,6 +1216,7 @@ bool ed_fm_change_mass(double &delta_mass,
     double &delta_mass_moment_of_inertia_y,
     double &delta_mass_moment_of_inertia_z)
 {
+    trace_call("ed_fm_change_mass");
     FGJSBsim* model = get_model();
     if (!model) return false;
 
@@ -965,12 +1291,12 @@ you should distribute it inside at different fuel tanks
 */
 void ed_fm_set_internal_fuel(double fuel)
 {
-    //printf("ed_fm_set_internal_fuel %5.1f\n", fuel);
+    trace_callf("ed_fm_set_internal_fuel", "fuel=%.3f", fuel);
 }
 
 double ed_fm_get_internal_fuel()
 {
-    //printf("ed_fm_get_internal_fuel\n");
+    trace_call("ed_fm_get_internal_fuel");
     return 0;
 }
 
@@ -979,32 +1305,151 @@ set external fuel volume for each payload station , called for weapon init and o
 */
 void ed_fm_set_external_fuel(int station, double fuel, double x, double y, double z)
 {
-    //printf("ed_fm_set_internal_fuel %d %5.1f (%5.1f,%5.1f,%5.1f)\n", station, fuel, x,y,z);
+    trace_callf("ed_fm_set_external_fuel", "station=%d fuel=%.3f pos=%.3f/%.3f/%.3f",
+                station, fuel, x, y, z);
 }
 
 double ed_fm_get_external_fuel()
 {
-    //printf("ed_fm_get_external_fuel\n");
+    trace_call("ed_fm_get_external_fuel");
     return 0;
 }
 
 void ed_fm_configure(const char * cfg_path)
 {
+    trace_callf("ed_fm_configure", "path=%s", cfg_path ? cfg_path : "");
     printf("ed_fm_configure %s\n", cfg_path);
 }
 
 void ed_fm_set_plugin_data_install_path(const char* cfg_path)
 {
+    trace_callf("ed_fm_set_plugin_data_install_path", "path=%s", cfg_path ? cfg_path : "");
     printf("ed_fm_set_plugin_data_install_path: %s\n", cfg_path);
     root_folder = std::string(cfg_path);
 }
 
+// ============================================================================
+// Gear feedback
+// ----------------------------------------------------------------------------
+// DCS is responsible for the suspension and the ground contact physics. 
+// We provide the gear state via ed_fm_get_param it does the ground handling
+// and provides the resultant force, application point, strut compression, wheel speed
+//
+// Weight on wheels is something that most aircraft models need and normally set
+// inside FGGroundReactions but that isn't going to be called because we always
+// keep the gear retracted so we will write this into gear/unit[N]/WOW and because
+// this will also be written by JSBSim we are ensuring that it will be correct when
+// read by the systems.
+// 
+// NOTE: The DCS strut index and the JSBSim gear unit index must be the same and this
+//       is usually (0 nose, 1 left, 2 right) for a tricycle gear.
+// ============================================================================
+namespace {
+
+struct GearStrut {
+    SGPropertyNode* wow          = nullptr;   // JSBSim's own, written by us
+    SGPropertyNode* compression  = nullptr;
+    SGPropertyNode* wheel_speed  = nullptr;
+    SGPropertyNode* integrity    = nullptr;
+    SGPropertyNode* force[3]     = { nullptr, nullptr, nullptr };
+    SGPropertyNode* point[3]     = { nullptr, nullptr, nullptr };
+    // Drive the external_reactions forces built in FGJSBsim::init_gear_reactions:
+    // the magnitude along each JSBSim body axis, and the acting point they share.
+    SGPropertyNode* er_force[3]  = { nullptr, nullptr, nullptr };
+    SGPropertyNode* er_point[3][3] = { { nullptr } };
+};
+
+std::map<int, GearStrut> gear_struts;
+
+GearStrut& gear_strut(FGJSBsim* model, int idx)
+{
+    auto it = gear_struts.find(idx);
+    if (it != gear_struts.end()) return it->second;
+
+    GearStrut& p = gear_struts[idx];
+    SGPropertyNode* root = model->PropertyManager->GetNode();
+    const std::string n = std::to_string(idx);
+
+    const std::string base = "/fdm/jsbsim/acefm/gear/unit[" + n + "]/";
+    p.wow = root->getNode(base + "WOW", true);
+    p.compression = root->getNode(base + "compression", true);
+    p.wheel_speed = root->getNode(base + "wheel-speed-ms", true);
+    p.integrity   = root->getNode(base + "integrity", true);
+    static const char* axis[3] = { "x", "y", "z" };
+    for (int i = 0; i < 3; i++) {
+        p.force[i] = root->getNode(base + "force-" + axis[i] + "-n", true);
+        p.point[i] = root->getNode(base + "force-point-" + axis[i] + "-m", true);
+
+        // The magnitude the external force reads, in JSBSim's units and axes.
+        p.er_force[i] = root->getNode(base + "force-" + std::string(axis[i]) + "-lbs", true);
+
+        // Each of the three axis forces carries its own acting point, and all
+        // three share the strut's contact point.
+        const std::string er = "/fdm/jsbsim/external_reactions/acefm-gear-" + n + "-"
+                             + axis[i] + "/location-";
+        for (int d = 0; d < 3; d++)
+            p.er_point[i][d] = root->getNode(er + axis[d] + "-in", true);
+    }
+    return p;
+}
+
+} // namespace
+
 void ed_fm_suspension_feedback(int idx, const ed_fm_suspension_info * info)
 {
-    if (true)
-    {
-//        std::cout << "suspension info " << idx << ": " << info->struct_compression << "\t" << info->integrity_factor << "\t" <<
-//        info->acting_force[0] << ", " << info->acting_force[1] << ", " << info->acting_force[2] << "\n";
+    if (!info) {
+        trace_callf("ed_fm_suspension_feedback", "idx=%d info=null", idx);
+        return;
+    }
+
+    trace_callf("ed_fm_suspension_feedback",
+                "idx=%d compression=%.4f integrity=%.3f wheel_speed=%.3f "
+                "force=%.1f/%.1f/%.1f point=%.3f/%.3f/%.3f",
+                idx, info->struct_compression, info->integrity_factor,
+                info->wheel_speed_X,
+                info->acting_force[0], info->acting_force[1], info->acting_force[2],
+                info->acting_force_point[0], info->acting_force_point[1],
+                info->acting_force_point[2]);
+
+    FGJSBsim* model = get_model();
+    if (!model || idx < 0) return;
+
+    GearStrut& p = gear_strut(model, idx);
+
+    p.compression->setDoubleValue(info->struct_compression);
+    p.wheel_speed->setDoubleValue(info->wheel_speed_X);
+    p.integrity->setDoubleValue(info->integrity_factor);
+    for (int i = 0; i < 3; i++) {
+        p.force[i]->setDoubleValue(info->acting_force[i]);
+        p.point[i]->setDoubleValue(info->acting_force_point[i]);
+    }
+
+    // The strut carries load, so the wheel is on the ground. Either signal alone
+    // is enough: a wheel can just touch with no compression yet, and a fully
+    // compressed strut can momentarily read zero force as it rebounds.
+    const double force_n = Magnitude(info->acting_force[0],
+                                     info->acting_force[1],
+                                     info->acting_force[2]);
+    const bool wow = info->struct_compression > 1e-4 || force_n > 1.0;
+    p.wow->setBoolValue(wow);
+
+    // Feed the external_reactions forces, converting DCS to JSBSim.
+    //   DCS body axes:     X forward, Y up,    Z right   (N, m)
+    //   JSBSim body axes:  X forward, Y right, Z down    (lbs, in)
+    const double fx =  info->acting_force[0] / LBS_TO_N;
+    const double fy =  info->acting_force[2] / LBS_TO_N;
+    const double fz = -info->acting_force[1] / LBS_TO_N;
+
+    const double px =  info->acting_force_point[0] / INCHES_TO_METERS;
+    const double py =  info->acting_force_point[2] / INCHES_TO_METERS;
+    const double pz = -info->acting_force_point[1] / INCHES_TO_METERS;
+
+    const double f[3] = { fx, fy, fz };
+    const double pt[3] = { px, py, pz };
+    for (int i = 0; i < 3; i++) {
+        p.er_force[i]->setDoubleValue(f[i]);
+        for (int d = 0; d < 3; d++)
+            p.er_point[i][d]->setDoubleValue(pt[d]);
     }
 }
 
@@ -1015,16 +1460,169 @@ void ed_fm_set_surface(double h,	//surface height under the center of aircraft
     double normal_z	//components of normal vector to surface
 )
 {
-    //printf("ed_fm_set_surface %5.1f %5.1f %d %5.1f,%5.1f,%5.1f\n", h, h_obj, surface_type, normal_x, normal_y, normal_z);
-    //model->set_agl_m(h);
-    
+    trace_callf("ed_fm_set_surface", "h=%.3f h_obj=%.3f type=%u normal=%.4f/%.4f/%.4f",
+                h, h_obj, surface_type, normal_x, normal_y, normal_z);
 }
 
 /*
 input handling
 */
+// ============================================================================
+// Trace-only entry points
+// ----------------------------------------------------------------------------
+// These are exported purely to discover whether DCS calls them, when, and with
+// what.  Each one logs and returns the neutral value that reproduces today's
+// behaviour, so exporting them changes nothing: DCS already behaves as if they
+// were absent.  They become the implementation sites for the wiring work.
+//
+// The force and moment variants (ed_fm_add_global_force, and all four
+// *_component forms) are deliberately NOT exported.  DCS may prefer a component
+// path over ed_fm_add_local_force if it finds one, which would silently stop it
+// taking our forces at all.  That is not a risk worth running for a trace.
+// ============================================================================
+
+void ed_fm_release()
+{
+    trace_call("ed_fm_release");
+    trace_close();
+}
+
+void ed_fm_cold_start()
+{
+    trace_call("ed_fm_cold_start");
+}
+
+void ed_fm_hot_start()
+{
+    trace_call("ed_fm_hot_start");
+}
+
+void ed_fm_hot_start_in_air()
+{
+    trace_call("ed_fm_hot_start_in_air");
+}
+
+bool ed_fm_make_balance(double &ax, double &ay, double &az,
+                        double &vx, double &vy, double &vz,
+                        double &omegadotx, double &omegadoty, double &omegadotz,
+                        double &omegax, double &omegay, double &omegaz,
+                        double &yaw, double &pitch, double &roll)
+{
+    trace_call("ed_fm_make_balance");
+    return false;   // no balance offered; DCS keeps its own spawn state
+}
+
+double ed_fm_get_shake_amplitude()
+{
+    trace_call("ed_fm_get_shake_amplitude");
+    return 0;
+}
+
+bool ed_fm_enable_debug_info()
+{
+    trace_call("ed_fm_enable_debug_info");
+    return false;
+}
+
+size_t ed_fm_debug_watch(int level, char *buffer, size_t maxlen)
+{
+    trace_callf("ed_fm_debug_watch", "level=%d maxlen=%zu", level, maxlen);
+    return 0;       // nothing written, so DCS displays nothing
+}
+
+void ed_fm_on_planned_failure(const char *failure_id)
+{
+    trace_callf("ed_fm_on_planned_failure", "id=%s", failure_id ? failure_id : "");
+}
+
+void ed_fm_on_damage(int element, double element_integrity_factor)
+{
+    trace_callf("ed_fm_on_damage", "element=%d integrity=%.4f",
+                element, element_integrity_factor);
+}
+
+void ed_fm_repair()
+{
+    trace_call("ed_fm_repair");
+}
+
+bool ed_fm_need_to_be_repaired()
+{
+    trace_call("ed_fm_need_to_be_repaired");
+    return false;
+}
+
+void ed_fm_set_immortal(bool value)
+{
+    trace_callf("ed_fm_set_immortal", "value=%d", value ? 1 : 0);
+}
+
+void ed_fm_unlimited_fuel(bool value)
+{
+    trace_callf("ed_fm_unlimited_fuel", "value=%d", value ? 1 : 0);
+}
+
+void ed_fm_set_easy_flight(bool value)
+{
+    trace_callf("ed_fm_set_easy_flight", "value=%d", value ? 1 : 0);
+}
+
+// The mission-editor properties sheet.  Tracing this tells us exactly what the
+// airframe's entry.lua declares and what the mission sets, which is the input
+// needed to map them onto the property tree.
+void ed_fm_set_property_numeric(const char *property_name, float value)
+{
+    trace_callf("ed_fm_set_property_numeric", "name=%s value=%.6g",
+                property_name ? property_name : "", (double)value);
+}
+
+void ed_fm_set_property_string(const char *property_name, const char *value)
+{
+    trace_callf("ed_fm_set_property_string", "name=%s value=%s",
+                property_name ? property_name : "", value ? value : "");
+}
+
+bool ed_fm_pop_simulation_event(ed_fm_simulation_event &out)
+{
+    trace_call("ed_fm_pop_simulation_event");
+    return false;   // no events to report; DCS stops asking this frame
+}
+
+bool ed_fm_push_simulation_event(const ed_fm_simulation_event &in)
+{
+    trace_callf("ed_fm_push_simulation_event", "type=%u msg=%s p0=%.4f p1=%.4f",
+                in.event_type, in.event_message, in.event_params[0],
+                in.event_params[1]);
+    return false;
+}
+
+void ed_fm_refueling_add_fuel(double fuel)
+{
+    trace_callf("ed_fm_refueling_add_fuel", "fuel=%.3f", fuel);
+}
+
+bool ed_fm_LERX_vortex_update(unsigned idx, LERX_vortex &out)
+{
+    trace_callf("ed_fm_LERX_vortex_update", "idx=%u", idx);
+    return false;   // no vortices; DCS stops iterating
+}
+
+void ed_fm_wind_vector_field_update_request(wind_vector_field &in_out)
+{
+    trace_call("ed_fm_wind_vector_field_update_request");
+    in_out.field = nullptr;         // no field requested; DCS fills nothing
+    in_out.field_points_count = 0;
+}
+
+void ed_fm_wind_vector_field_done()
+{
+    trace_call("ed_fm_wind_vector_field_done");
+}
+
+
 void ed_fm_set_command(int command, float value)
 {
+    trace_callf("ed_fm_set_command", "command=%d value=%.6g", command, (double)value);
     rec_cmd(command, value);
 
     // All input bindings are config-driven: aceFMconfig.xml <sim><commands>

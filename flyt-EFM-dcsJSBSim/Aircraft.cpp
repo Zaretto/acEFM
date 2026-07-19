@@ -42,11 +42,14 @@ DCS_interface* get_dcs_interface()
 }
 void ed_fm_set_draw_args_v2(float* drawargs, size_t size)
 {
-    printf("ed_fm_set_draw_args_v2 %f %d\n", drawargs, size);
+    trace_callf("ed_fm_set_draw_args_v2", "size=%zu", size);
+    FGJSBsim* model = get_model();
+    dcs_i->drawArguments.Update(model, drawargs, size);
 }
 
 void ed_fm_set_draw_args(EdDrawArgument* drawargs, size_t size)
 {
+    trace_callf("ed_fm_set_draw_args", "size=%zu", size);
     FGJSBsim* model = get_model();
     dcs_i->drawArguments.Update(model, drawargs, size);
     return;
@@ -56,7 +59,8 @@ void ed_fm_set_draw_args(EdDrawArgument* drawargs, size_t size)
 extern void rec_sim(double dt);  // defined in DCS_interface.cpp
 
 void ed_fm_simulate(double dt) {
-    //    FGJSBsim *model = get_model();
+    trace_frame();   // resolves the buffered pre-init calls on the first frame
+    trace_callf("ed_fm_simulate", "dt=%.9g", dt);
     rec_sim(dt);
     get_model()->update(dt);
     dcs_i->simulate(dt);
