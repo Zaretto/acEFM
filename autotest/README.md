@@ -58,11 +58,14 @@ Key classes:
 - `GlobalTolerances` — pattern-matched tolerance rules
 - `OutputFileSpec` — one output CSV vs its baseline
 - `TestSpec` — full test definition (script, output files, tolerances)
-- `PropertyResult` / `CheckResult` / `TestResult` — comparison results
+- `ScriptCheckEvent` — an event in a runscript whose `<notify>` carries `<check>` elements
+- `PropertyResult` / `CheckResult` / `CheckEventResult` / `TestResult` — comparison results
 
 Key functions:
 - `parse_autotest_config()` / `parse_tolerances()` — config parsing
-- `run_test()` — executes TestPlane.exe via subprocess (300s timeout)
+- `resolve_jsbsim_exe()` — finds the JSBSim.exe script runner: `--jsbsim`, `JSBSIM_EXE`, next to `--testplane`, then `aceFM/build/JSBSim/src/{Release,Debug}/JSBSim.exe`, then PATH
+- `run_test()` — executes JSBSim.exe via subprocess (300s timeout)
+- `parse_script_check_events()` / `match_check_events()` — the executed-checks assertion (see below)
 - `parse_testplane_output()` — regex parsing of stdout for initial conditions, events, and JSBSim `<check>` results
 - `check_property()` / `compare_csv()` — CSV column comparison against baselines
 - `generate_plots()` — matplotlib comparison plots (baseline vs output with tolerance bands)
@@ -103,6 +106,18 @@ Stdout is parsed with regex for:
 - Event execution lines
 - `CHECK PASS/FAIL` lines from JSBSim `<check>` elements
 - `EVENT PASS/FAIL` lines, one per firing of an event that carries checks
+
+## Check Events Must Fire
+
+A `<check>` only runs when its event's `<condition>` becomes true. A run that diverges early never reaches the condition, the checks never execute, and the absence of failures is a false pass. The runner therefore asserts execution, not just results:
+
+- Before each run it parses the script for events whose `<notify>` carries `<check>` elements (`ScriptCheckEvent`).
+- After the run it matches them by name against the `EVENT PASS/FAIL: <name> (n of m checks ...)` lines JSBSim prints. A one-shot event must fire exactly once; a `persistent` or `continuous` event at least once; every firing must have evaluated the declared number of checks.
+- An event that never fired fails the test (`CHECK EVENTS NOT RUN` in the text report, `<check-events>` in the XML, `check-events-fired`/`check-events-expected` on `<result>`).
+- Two check events with the same name, or a check event without a name, is a script error (exit code 2) because the EVENT lines could not be told apart.
+- If scripts expect check events but none fired in any test, the report prints a WARNING: the JSBSim.exe almost certainly lacks the `<check>` framework. That framework lives on the fork's `DCS-WIP-no-hacks` branch, not upstream master, so after switching the JSBSim submodule to another branch, rebuild `aceFM/build/JSBSim` before trusting a run.
+
+Unit tests for this live in `test_check_events.py`: `python -m unittest test_check_events`.
 
 ## Exit Codes
 

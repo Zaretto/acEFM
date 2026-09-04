@@ -326,6 +326,13 @@
         <xsl:value-of select="at:result/@checks-total"/>
         <xsl:text> checks passed</xsl:text>
       </xsl:if>
+      <xsl:if test="at:result/@check-events-expected">
+        <xsl:text>, </xsl:text>
+        <xsl:value-of select="at:result/@check-events-fired"/>
+        <xsl:text>/</xsl:text>
+        <xsl:value-of select="at:result/@check-events-expected"/>
+        <xsl:text> check events fired</xsl:text>
+      </xsl:if>
     </fo:block>
 
     <!-- Error message -->
@@ -410,6 +417,66 @@
                     <xsl:otherwise>FAIL</xsl:otherwise>
                   </xsl:choose>
                 </fo:block>
+              </fo:table-cell>
+            </fo:table-row>
+          </xsl:for-each>
+        </fo:table-body>
+      </fo:table>
+    </xsl:if>
+
+    <!-- Check Events table: each event carrying checks must have fired -->
+    <xsl:if test="at:check-events/at:check-event">
+      <fo:block font-size="9pt" font-weight="bold" color="{$navy}"
+                margin-bottom="1mm">
+        Check Events
+      </fo:block>
+      <fo:table table-layout="fixed" width="100%" border="0.5pt solid #999999"
+                margin-bottom="3mm">
+        <fo:table-column column-width="40%"/>
+        <fo:table-column column-width="10%"/>
+        <fo:table-column column-width="10%"/>
+        <fo:table-column column-width="12%"/>
+        <fo:table-column column-width="28%"/>
+        <fo:table-header>
+          <fo:table-row background-color="{$navy}" color="white">
+            <fo:table-cell padding="2pt"><fo:block font-weight="bold">Event</fo:block></fo:table-cell>
+            <fo:table-cell padding="2pt"><fo:block font-weight="bold">Checks</fo:block></fo:table-cell>
+            <fo:table-cell padding="2pt"><fo:block font-weight="bold">Fired</fo:block></fo:table-cell>
+            <fo:table-cell padding="2pt"><fo:block font-weight="bold">Result</fo:block></fo:table-cell>
+            <fo:table-cell padding="2pt"><fo:block font-weight="bold">Message</fo:block></fo:table-cell>
+          </fo:table-row>
+        </fo:table-header>
+        <fo:table-body>
+          <xsl:for-each select="at:check-events/at:check-event">
+            <fo:table-row>
+              <xsl:if test="position() mod 2 = 0">
+                <xsl:attribute name="background-color"><xsl:value-of select="$light-grey"/></xsl:attribute>
+              </xsl:if>
+              <fo:table-cell padding="2pt" border="0.5pt solid {$mid-grey}">
+                <fo:block font-size="7pt"><xsl:value-of select="@name"/></fo:block>
+              </fo:table-cell>
+              <fo:table-cell padding="2pt" border="0.5pt solid {$mid-grey}">
+                <fo:block><xsl:value-of select="@checks"/></fo:block>
+              </fo:table-cell>
+              <fo:table-cell padding="2pt" border="0.5pt solid {$mid-grey}">
+                <fo:block><xsl:value-of select="@fired"/></fo:block>
+              </fo:table-cell>
+              <fo:table-cell padding="2pt" border="0.5pt solid {$mid-grey}">
+                <fo:block font-weight="bold">
+                  <xsl:attribute name="color">
+                    <xsl:choose>
+                      <xsl:when test="@passed = 'true'">#1a7f37</xsl:when>
+                      <xsl:otherwise>#c00000</xsl:otherwise>
+                    </xsl:choose>
+                  </xsl:attribute>
+                  <xsl:choose>
+                    <xsl:when test="@passed = 'true'">RUN</xsl:when>
+                    <xsl:otherwise>NOT RUN</xsl:otherwise>
+                  </xsl:choose>
+                </fo:block>
+              </fo:table-cell>
+              <fo:table-cell padding="2pt" border="0.5pt solid {$mid-grey}">
+                <fo:block font-size="7pt"><xsl:value-of select="@message"/></fo:block>
               </fo:table-cell>
             </fo:table-row>
           </xsl:for-each>

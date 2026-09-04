@@ -138,6 +138,50 @@ class TestSpec:
         self.output_files = []  # list of OutputFileSpec
 
 
+class ScriptCheckEvent:
+    """An <event> in a runscript whose <notify> carries <check> elements.
+
+    A check only runs when the event's condition becomes true, so each of
+    these is an expectation: the run must reach the condition, or the checks
+    were never evaluated and a clean result means nothing.
+    """
+
+    def __init__(self, name, checks, repeating):
+        self.name = name
+        self.checks = checks          # number of <check> elements in the notify
+        self.repeating = repeating    # persistent or continuous: fires more than once
+
+
+def parse_script_check_events(script_path):
+    """List the check-bearing events of a runscript, in document order.
+
+    Raises ValueError for a script whose check events cannot be matched to
+    the EVENT lines JSBSim prints: an event without a name, or two check
+    events with the same name.
+    """
+    root = ET.parse(script_path).getroot()
+    run = root.find("run")
+    events = []
+    if run is None:
+        return events
+    seen = set()
+    for ev in run.findall("event"):
+        notify = ev.find("notify")
+        checks = len(notify.findall("check")) if notify is not None else 0
+        if checks == 0:
+            continue
+        name = ev.get("name") or ""
+        if not name.strip():
+            raise ValueError(f"{script_path}: an event with <check> elements has no name")
+        if name in seen:
+            raise ValueError(f"{script_path}: two events with <check> elements are both named '{name}'")
+        seen.add(name)
+        repeating = (ev.get("persistent", "").lower() == "true"
+                     or ev.get("continuous", "").lower() == "true")
+        events.append(ScriptCheckEvent(name, checks, repeating))
+    return events
+
+
 class PropertyResult:
     """Result of comparing a single property."""
 
@@ -170,6 +214,47 @@ class CheckResult:
         self.time = time  # simulation time when the check was evaluated
 
 
+class CheckEventResult:
+    """Whether a check-bearing event of the script fired as expected."""
+
+    def __init__(self, name, expected_checks, repeating, fired, passed, message=""):
+        self.name = name
+        self.expected_checks = expected_checks
+        self.repeating = repeating
+        self.fired = fired            # number of EVENT lines seen for this event
+        self.passed = passed
+        self.message = message
+
+
+def match_check_events(expected, event_results):
+    """Match the script's check events against the EVENT lines of a run.
+
+    An event that never fired fails, because its checks were never evaluated.
+    A one-shot event must fire exactly once; a persistent or continuous event
+    at least once. Every firing must have evaluated the number of checks the
+    script declares. A failed check inside the event is the check's own
+    result and does not affect this.
+    """
+    results = []
+    for ev in expected:
+        firings = [er for er in event_results if er["name"] == ev.name]
+        fired = len(firings)
+        passed, message = True, ""
+        if fired == 0:
+            passed = False
+            message = f"never fired ({ev.checks} checks not executed)"
+        elif not ev.repeating and fired != 1:
+            passed = False
+            message = f"fired {fired} times, expected once"
+        else:
+            wrong = [f for f in firings if f.get("total") != ev.checks]
+            if wrong:
+                passed = False
+                message = f"evaluated {wrong[0].get('total')} of {ev.checks} checks"
+        results.append(CheckEventResult(ev.name, ev.checks, ev.repeating, fired, passed, message))
+    return results
+
+
 class TestResult:
     """Result of running and validating a single test."""
 
@@ -177,6 +262,7 @@ class TestResult:
         self.test_spec = test_spec
         self.property_results = []
         self.check_results = []  # list of CheckResult from <check> elements
+        self.check_event_results = []  # list of CheckEventResult, one per check event
         self.run_return_code = 0  # TestPlane.exe return code (0=pass, 1=check-fail)
         self.run_error = None
         self.stdout = ""
@@ -187,8 +273,9 @@ class TestResult:
             return False
         csv_ok = all(pr.passed for pr in self.property_results)
         check_ok = all(cr.passed for cr in self.check_results)
+        events_ok = all(cer.passed for cer in self.check_event_results)
         rc_ok = self.run_return_code == 0
-        return csv_ok and check_ok and rc_ok
+        return csv_ok and check_ok and events_ok and rc_ok
 
     @property
     def num_passed(self):
@@ -205,6 +292,14 @@ class TestResult:
     @property
     def failures(self):
         return [pr for pr in self.property_results if not pr.passed]
+
+    @property
+    def num_check_events_fired(self):
+        return sum(1 for cer in self.check_event_results if cer.fired > 0)
+
+    @property
+    def unfired_check_events(self):
+        return [cer for cer in self.check_event_results if not cer.passed]
 
 
 def parse_tolerances(tolerances_path):
@@ -616,10 +711,12 @@ def format_report(test_results, aircraft_name):
             if tr.check_results:
                 n_chk_pass = sum(1 for cr in tr.check_results if cr.passed)
                 parts.append(f"{n_chk_pass}/{len(tr.check_results)} checks")
-            lines.append(
-                f"[PASS] {tr.test_spec.name}  "
-                f"({', '.join(parts) if parts else 'ok'} within tolerance)"
-            )
+            if tr.check_event_results:
+                parts.append(f"{tr.num_check_events_fired}/{len(tr.check_event_results)} check events fired")
+            if parts:
+                lines.append(f"[PASS] {tr.test_spec.name}  ({', '.join(parts)} within tolerance)")
+            else:
+                lines.append(f"[PASS] {tr.test_spec.name}  (no baselines and no checks: nothing was verified)")
         else:
             parts = []
             if tr.num_failed:
@@ -627,6 +724,10 @@ def format_report(test_results, aircraft_name):
             chk_fails = [cr for cr in tr.check_results if not cr.passed]
             if chk_fails:
                 parts.append(f"{len(chk_fails)}/{len(tr.check_results)} checks FAILED")
+            if tr.unfired_check_events:
+                parts.append(f"{len(tr.unfired_check_events)}/{len(tr.check_event_results)} check events NOT RUN")
+            elif tr.check_event_results:
+                parts.append(f"{tr.num_check_events_fired}/{len(tr.check_event_results)} check events fired")
             lines.append(
                 f"[FAIL] {tr.test_spec.name} "
                 f"({'; '.join(parts)})"
@@ -653,6 +754,29 @@ def format_report(test_results, aircraft_name):
                     f"{base_str:>10s} {pct_str:>8s}"
                 )
             lines.append("")
+
+    # Check events that did not run as the script expects
+    any_unfired = False
+    for tr in test_results:
+        if tr.unfired_check_events:
+            if not any_unfired:
+                lines.append("")
+            any_unfired = True
+            lines.append(f"  CHECK EVENTS NOT RUN - {tr.test_spec.name}:")
+            for cer in tr.unfired_check_events:
+                lines.append(f"  '{cer.name}': {cer.message}")
+            lines.append("")
+
+    # Scripts expect check events but none fired anywhere: the binary almost
+    # certainly lacks the <check> framework, and every check-based test would
+    # otherwise look green.
+    expects_events = any(tr.check_event_results for tr in test_results)
+    fired_any = any(tr.num_check_events_fired for tr in test_results)
+    if expects_events and not fired_any:
+        lines.append("")
+        lines.append("WARNING: no check event fired in any test. Is JSBSim.exe built with the "
+                     "<check> framework (DCS-WIP-no-hacks)?")
+        lines.append("")
 
     # Summary
     num_passed = sum(1 for tr in test_results if tr.passed)
@@ -955,7 +1079,7 @@ _CHECK_MSG_RE = re.compile(
     r"^\s+CHECK (PASS|FAIL): (.+?) = ([\d.eE+\-]+) expected ([\d.eE+\-]+) tol ([\d.eE+\-]+)\s+: (.+)"
 )
 _EVENT_RESULT_RE = re.compile(
-    r"^\s+EVENT (PASS|FAIL): (.+?) \((\d+)"
+    r"^\s+EVENT (PASS|FAIL): (.+?) \((\d+) of (\d+) checks"
 )
 
 # Regex for State Report data lines, e.g.:
@@ -1118,6 +1242,7 @@ def parse_testplane_output(stdout):
                         "passed": em.group(1) == "PASS",
                         "name": em.group(2),
                         "count": int(em.group(3)),
+                        "total": int(em.group(4)),
                         "time": current_event_time,
                     })
                     i += 1
@@ -1165,6 +1290,7 @@ def parse_testplane_output(stdout):
                     "passed": em.group(1) == "PASS",
                     "name": em.group(2),
                     "count": int(em.group(3)),
+                    "total": int(em.group(4)),
                     "time": None,
                 })
             i += 1
@@ -1317,6 +1443,9 @@ def generate_xml_report(aircraft_dir, tests, test_results, plot_paths,
                 n_chk_pass = sum(1 for cr in tr.check_results if cr.passed)
                 result_attrs["checks-passed"] = str(n_chk_pass)
                 result_attrs["checks-total"] = str(len(tr.check_results))
+            if tr.check_event_results:
+                result_attrs["check-events-fired"] = str(tr.num_check_events_fired)
+                result_attrs["check-events-expected"] = str(len(tr.check_event_results))
             _se(test_elem, "result", status=status, **result_attrs)
 
             # property-results
@@ -1352,6 +1481,21 @@ def generate_xml_report(aircraft_dir, tests, test_results, plot_paths,
                     if cr.message:
                         attrs["message"] = cr.message
                     _se(cr_container, "check", **attrs)
+
+            # check-events: did each check-bearing event of the script fire
+            if tr.check_event_results:
+                ce_container = _se(test_elem, "check-events")
+                for cer in tr.check_event_results:
+                    attrs = {
+                        "name": cer.name,
+                        "checks": str(cer.expected_checks),
+                        "fired": str(cer.fired),
+                        "repeating": str(cer.repeating).lower(),
+                        "passed": str(cer.passed).lower(),
+                    }
+                    if cer.message:
+                        attrs["message"] = cer.message
+                    _se(ce_container, "check-event", **attrs)
 
             # initial-conditions and events from parsed stdout
             if tr.stdout:
@@ -1762,6 +1906,14 @@ def main():
         print(f"  [{idx}/{n_tests}] Running: {test_spec.name} "
               f"({test_spec.script}) -- invoking JSBSim (timeout 300s)...")
         script_path = "autotest/" + test_spec.script
+        try:
+            expected_events = parse_script_check_events(Path(aircraft_dir) / script_path)
+        except (ValueError, ET.ParseError) as exc:
+            result = TestResult(test_spec)
+            result.run_error = f"script error: {exc}"
+            test_results.append(result)
+            print(f"    ERROR: {result.run_error}")
+            continue
         returncode, stdout, stderr = run_test(
             jsbsim_exe, aircraft_dir, script_path, mode=mode,
             verbose=args.verbose,
@@ -1806,6 +1958,13 @@ def main():
             n_chk_fail = sum(1 for cr in result.check_results if not cr.passed)
             if n_chk_fail:
                 print(f"    CHECK FAILURES: {n_chk_fail} check(s) failed")
+
+        # Every check-bearing event of the script must have fired, or its
+        # checks were never evaluated and a clean run proves nothing.
+        result.check_event_results = match_check_events(
+            expected_events, parsed_output.get("event_results", []))
+        for cer in result.unfired_check_events:
+            print(f"    CHECK EVENT NOT RUN: '{cer.name}' {cer.message}")
 
         if args.promote:
             # In promote mode, skip comparison - just copy outputs

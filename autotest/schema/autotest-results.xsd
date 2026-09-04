@@ -58,6 +58,19 @@
   </xs:complexType>
 
   <!-- ================================================================== -->
+  <!-- Check event: an event whose <notify> carries <check> elements.      -->
+  <!-- Its checks only run when the event fires, so the run must reach it. -->
+  <!-- ================================================================== -->
+  <xs:complexType name="checkEventType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="checks" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="fired" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="repeating" type="xs:boolean" use="required"/>
+    <xs:attribute name="passed" type="xs:boolean" use="required"/>
+    <xs:attribute name="message" type="xs:string"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
   <!-- Initial condition row                                               -->
   <!-- ================================================================== -->
   <xs:complexType name="conditionType">
@@ -115,6 +128,8 @@
     <xs:attribute name="properties-total" type="xs:nonNegativeInteger"/>
     <xs:attribute name="checks-passed" type="xs:nonNegativeInteger"/>
     <xs:attribute name="checks-total" type="xs:nonNegativeInteger"/>
+    <xs:attribute name="check-events-fired" type="xs:nonNegativeInteger"/>
+    <xs:attribute name="check-events-expected" type="xs:nonNegativeInteger"/>
   </xs:complexType>
 
   <!-- ================================================================== -->
@@ -136,6 +151,14 @@
         <xs:complexType>
           <xs:sequence>
             <xs:element name="check" type="at:checkResultType"
+                        maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="check-events" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="check-event" type="at:checkEventType"
                         maxOccurs="unbounded"/>
           </xs:sequence>
         </xs:complexType>

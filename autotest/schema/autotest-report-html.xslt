@@ -208,6 +208,10 @@
                   <xsl:text>, </xsl:text>
                   <xsl:value-of select="at:result/@checks-passed"/>/<xsl:value-of select="at:result/@checks-total"/> checks
                 </xsl:if>
+                <xsl:if test="at:result/@check-events-expected">
+                  <xsl:text>, </xsl:text>
+                  <xsl:value-of select="at:result/@check-events-fired"/>/<xsl:value-of select="at:result/@check-events-expected"/> check events fired
+                </xsl:if>
               </span>
               <span>
                 <xsl:attribute name="class">badge <xsl:choose>
@@ -270,6 +274,36 @@
                           </xsl:choose>
                         </strong>
                       </td>
+                    </tr>
+                  </xsl:for-each>
+                </table>
+              </xsl:if>
+
+              <!-- Check Events: each event carrying checks must have fired -->
+              <xsl:if test="at:check-events/at:check-event">
+                <div class="section-title">Check Events</div>
+                <table class="data">
+                  <tr>
+                    <th>Event</th><th>Checks</th><th>Fired</th><th>Result</th><th>Message</th>
+                  </tr>
+                  <xsl:for-each select="at:check-events/at:check-event">
+                    <tr>
+                      <td class="prop-name"><xsl:value-of select="@name"/></td>
+                      <td><xsl:value-of select="@checks"/></td>
+                      <td><xsl:value-of select="@fired"/></td>
+                      <td>
+                        <xsl:attribute name="class">
+                          <xsl:choose>
+                            <xsl:when test="@passed = 'true'">pass</xsl:when>
+                            <xsl:otherwise>fail</xsl:otherwise>
+                          </xsl:choose>
+                        </xsl:attribute>
+                        <xsl:choose>
+                          <xsl:when test="@passed = 'true'">RUN</xsl:when>
+                          <xsl:otherwise>NOT RUN</xsl:otherwise>
+                        </xsl:choose>
+                      </td>
+                      <td><xsl:value-of select="@message"/></td>
                     </tr>
                   </xsl:for-each>
                 </table>
