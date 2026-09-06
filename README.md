@@ -1,6 +1,6 @@
 # acEFM
-This permits the use of JSBSim models from with DCS World;
-There must be a config file in the root of your mod; "aceFMconfig.xml" that sets the basic data (properties) and defines which JSBSim XML file to use. Usually the JSBSim XML will include other files (e.g. engines, systems).
+
+This is a bridge between JSBSim and DCS World, providing a single DLL that you can use as your EFM. There is a config file in the root of your mod, "aceFMconfig.xml", that defines the basic structure of your module and provides various DCS-only interfaces (see acEFMconfig.xml DCS elements). Usually the JSBSim XML will include other files (e.g. engines, systems).
 
 * Builds against stock JSBSim. The `JSBSim/` submodule points at my fork https://github.com/Zaretto/jsbsim.git, branch DCS-WIP-no-hacks, which is upstream plus the additions the optional autotest system needs (see the Autotest section).
 * See https://github.com/Zaretto/DCS-SEPECAT-Jaguar for an example
@@ -10,7 +10,7 @@ There must be a config file in the root of your mod; "aceFMconfig.xml" that sets
 JSBSim is built as a **CMake-generated static library** (`libJSBSim` → `JSBSim.lib`) and linked into the EFM. The JSBSim tree stays pristine — there is no longer a hand-maintained `JSBSim.vcxproj` in the source tree.
 
 * CMake source: `JSBSim/`  →  build tree: `build/JSBSim/` (generator *Visual Studio 17 2022*, platform `x64`, `BUILD_SHARED_LIBS=OFF`).
-* CMake splits the build into one top-level project, `libJSBSim` (compiles only `FGFDMExec.cpp` + `JSBSim.cpp`), plus **14 sub-projects** that compile the rest and are linked in: `Atmosphere`, `FlightControl`, `GeographicLib`, `IOStreams`, `Init`, `InputOutput`, `Magvar`, `Math`, `Misc`, `Models`, `Properties`, `Propulsion`, `Xml`, and the `ZERO_CHECK` regeneration helper.
+* CMake splits the build into one top-level project, `libJSBSim` (compiles only `FGFDMExec.cpp` + `FGJSBBase.cpp`), plus **14 sub-projects** that compile the rest and are linked in: `Atmosphere`, `FlightControl`, `GeographicLib`, `IOStreams`, `Init`, `InputOutput`, `Magvar`, `Math`, `Misc`, `Models`, `Properties`, `Propulsion`, `Xml`, and the `ZERO_CHECK` regeneration helper.
 * `acEFM` and `TestPlane` reference `build\JSBSim\src\libJSBSim.vcxproj` as a project reference.
 * **All of these CMake projects are added to `acEFM.sln`** (under the *JSBSim libs* solution folder). This is required for incremental build and debug: if only `libJSBSim` were in the solution, Visual Studio's up-to-date check would not notice edits to JSBSim sources (they belong to the sub-projects), so a build would do nothing and the debugger would report *"source file is out of date"*.
 
@@ -30,8 +30,7 @@ JSBSim is built as a **CMake-generated static library** (`libJSBSim` → `JSBSim
 ## Platform / toolset versions
 
 * The standard toolset is **`v143`** (**Visual Studio 2022** 17.x, **MSVC 14.44**). The CMake-generated JSBSim projects build with `v143`.
-* On Richard's machine `acEFM` and `TestPlane` are locally bumped to PlatformToolset **`v145`** to test against **VS 2026 / v18**. This is a per-machine testing setting, **not** a project requirement — `v145` is not generally available, and without those build tools installed these projects fail with `MSB8020`. Retarget them back to `v143` on any machine that only has VS 2022.
-* Mixing is safe to link: the `v14x` static-library ABI is stable across `v143`/`v145`, so a `v143` `JSBSim.lib` links cleanly into a `v145` `acEFM.dll`.
+* For `acEFM` and `TestPlane` I've been using **`v145`** since **VS 2026 / v18** was released; the committed projects stay on `v143`. It is safe to link the `v14x` static libraries across different VS versions.
 * To also compile/debug JSBSim itself under `v145`, regenerate the CMake build with that toolset:
   ```
   cmake -S JSBSim -B build/JSBSim -T v145
@@ -41,14 +40,14 @@ JSBSim is built as a **CMake-generated static library** (`libJSBSim` → `JSBSim
 
 ### Cockpit API
 
-acEFM supports the mapping between properties and the cockpit API `(pfn_ed_cockpit_update_parameter_with_number(Handle, val);` 
+acEFM supports the mapping between properties and the cockpit API `pfn_ed_cockpit_update_parameter_with_number(Handle, val);` 
 
 Nodes as follows
 * `<param>` node defines the Handle to lookup
 * `<property>` where the value comes from
 * `<factor>` optional fixed factor to apply
-* `<delta>` the amount the property must change before an update is trigged (optional, default 0.0001)
-* `<type>` defines the type of the node which defines how the property value is handled prior to setting the value on the handle. Currently supported is the default type (nothing special) or `GenevaDrive` which will animation a Geneva Drive for instrument drums. `LinearDrive` is a linear drive. Only the default type is currently fully implemented.
+* `<delta>` the amount the property must change before an update is triggered (optional, default 0.0001)
+* `<type>` defines the type of the node which defines how the property value is handled prior to setting the value on the handle. Currently supported is the default type (nothing special) or `GenevaDrive` which will animate a Geneva Drive for instrument drums. `LinearDrive` is a linear drive. Only the default type is currently fully implemented.
 
 ```    <!-- bind all cockpit params -->
     <cockpit>
@@ -67,16 +66,16 @@ Nodes as follows
 ```
 
 ### Animations
-The config file can contain an `<animation>` node that permits the mapping of draw arguments
+The config file can contain an `<animations>` node that permits the mapping of draw arguments
 
 ### Draw arguments
 You can define which properties are mapped to the **draw arguments** for your model. These will be set inside `ed_fm_set_draw_args` 
 
-Nodes as follows
-* `<param>` node defines the Handle to lookup
+Each `<drawarg>` carries the draw argument number in its `n` attribute. Nodes as follows
 * `<property>` where the value comes from
-* `<factor>` optional fixed factor to apply
-* `<delta>` the amount the property must change before an update is trigged (optional, default 0.0001)
+* `<factor>` optional fixed factor to apply (default 1)
+* `<offset>` optional value added after the factor (default 0)
+* `<delta>` the amount the property must change before an update is triggered (optional, default 0.0001)
 
 e.g. for afterburners.
 ```
@@ -140,7 +139,7 @@ The transform is `out = clip(value * factor + offset, clip-min, clip-max)`. Set 
 
 ## Folder structure
 
-The main config files is **c:\users\YOU\Saved Games\DCS.openbeta\Mods\Aircraft\YOURMODEL\aceFMconfig.xml**. This defines all of the basic properties that the JSBSim XML requires and is where you can define what the draw arguments and cockpit animations.
+The main config file is **c:\users\YOU\Saved Games\DCS\Mods\Aircraft\YOURMODEL\aceFMconfig.xml**. This defines all of the basic properties that the JSBSim XML requires and is where the draw arguments and cockpit animations are defined.
 
 JSBSim XML files 
 * EFM/YOURMODEL.xml
