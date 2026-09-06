@@ -19,6 +19,8 @@
       <xs:element name="revision" type="xs:string" minOccurs="0"/>
       <xs:element name="prepared-by" type="xs:string" minOccurs="0"/>
       <xs:element name="classification" type="xs:string" minOccurs="0"/>
+      <xs:element name="company" type="xs:string" minOccurs="0"/>
+      <xs:element name="logo" type="xs:string" minOccurs="0"/>
     </xs:all>
   </xs:complexType>
 
@@ -37,11 +39,12 @@
   <!-- ================================================================== -->
   <xs:complexType name="propertyResultType">
     <xs:attribute name="name" type="xs:string" use="required"/>
-    <xs:attribute name="max-delta" type="xs:decimal" use="required"/>
+    <!-- xs:double so that INF can express a structural mismatch, where no delta exists -->
+    <xs:attribute name="max-delta" type="xs:double" use="required"/>
     <xs:attribute name="passed" type="xs:boolean" use="required"/>
-    <xs:attribute name="tol-abs" type="xs:decimal"/>
-    <xs:attribute name="tol-rel" type="xs:decimal"/>
-    <xs:attribute name="baseline-at-max" type="xs:decimal"/>
+    <xs:attribute name="tol-abs" type="xs:double"/>
+    <xs:attribute name="tol-rel" type="xs:double"/>
+    <xs:attribute name="baseline-at-max" type="xs:double"/>
   </xs:complexType>
 
   <!-- ================================================================== -->
@@ -49,11 +52,11 @@
   <!-- ================================================================== -->
   <xs:complexType name="checkResultType">
     <xs:attribute name="property" type="xs:string" use="required"/>
-    <xs:attribute name="expected" type="xs:decimal" use="required"/>
-    <xs:attribute name="actual" type="xs:decimal" use="required"/>
-    <xs:attribute name="tolerance" type="xs:decimal" use="required"/>
+    <xs:attribute name="expected" type="xs:double" use="required"/>
+    <xs:attribute name="actual" type="xs:double" use="required"/>
+    <xs:attribute name="tolerance" type="xs:double" use="required"/>
     <xs:attribute name="passed" type="xs:boolean" use="required"/>
-    <xs:attribute name="time" type="xs:decimal"/>
+    <xs:attribute name="time" type="xs:double"/>
     <xs:attribute name="message" type="xs:string"/>
   </xs:complexType>
 
@@ -97,7 +100,7 @@
                   minOccurs="0" maxOccurs="unbounded"/>
     </xs:sequence>
     <xs:attribute name="name" type="xs:string" use="required"/>
-    <xs:attribute name="time" type="xs:decimal" use="required"/>
+    <xs:attribute name="time" type="xs:double" use="required"/>
   </xs:complexType>
 
   <!-- ================================================================== -->

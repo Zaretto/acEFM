@@ -1454,7 +1454,7 @@ def generate_xml_report(aircraft_dir, tests, test_results, plot_paths,
                 for pr in tr.property_results:
                     attrs = {
                         "name": strip_jsbsim_prefix(pr.name),
-                        "max-delta": f"{pr.max_delta:.6g}",
+                        "max-delta": "INF" if math.isinf(pr.max_delta) else f"{pr.max_delta:.6g}",
                         "passed": str(pr.passed).lower(),
                     }
                     if pr.tol_abs is not None:
