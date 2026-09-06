@@ -2,7 +2,7 @@
 This permits the use of JSBSim models from with DCS World;
 There must be a config file in the root of your mod; "aceFMconfig.xml" that sets the basic data (properties) and defines which JSBSim XML file to use. Usually the JSBSim XML will include other files (e.g. engines, systems).
 
-* Required to use my JSBSim fork https://github.com/Zaretto/jsbsim.git using branch DCS-WIP-no-hacks (included as the `JSBSim/` git submodule)
+* Builds against stock JSBSim. The `JSBSim/` submodule points at my fork https://github.com/Zaretto/jsbsim.git, branch DCS-WIP-no-hacks, which is upstream plus the additions the optional autotest system needs (see the Autotest section).
 * See https://github.com/Zaretto/DCS-SEPECAT-Jaguar for an example
 
 ## JSBSim integration
@@ -159,7 +159,7 @@ e.g.
 
 # Autotest (QTG-style regression validation)
 
-The autotest system in `autotest/` is a **QTG** (Qualification Test Guide) inspired regression testing framework for JSBSim aircraft models. It runs `JSBSim.exe` directly against the aircraft's own JSBSim scripts — not the acEFM DLL or TestPlane — so it exercises the model in isolation from the DCS bridge. This currently requires our JSBSim fork's `JSBSim.exe`, which accepts the `--aircraft-path` / `--engine-path` / `--systems-path` / `--init-path` / `--property` command-line options the runner passes; these are the subject of an outstanding merge request upstream, so a stock JSBSim build won't yet work until either that lands or you build from our fork. It follows the same logic as real QTG practice — golden-run or flight-test reference data, defined tolerances, pass/fail reporting — without claiming full Level D qualification. The name and approach trace back to **ATG**, the autotest ground software installed on Air France's Vilgenis B737-228 simulator in 1988: the simulator flew a scripted profile driven by "Stela" test source files under the "Tardis" runner, and engineers checked strip-chart output against transparent tolerance overlays. This system is the same idea, done digitally.
+The autotest system in `autotest/` is a **QTG** (Qualification Test Guide) inspired regression testing framework for JSBSim aircraft models. It runs `JSBSim.exe` directly against the aircraft's own JSBSim scripts — not the acEFM DLL or TestPlane — so it exercises the model in isolation from the DCS bridge. This currently requires our JSBSim fork's `JSBSim.exe`, branch DCS-WIP-no-hacks: it has the `<check>` element for scripts, the `--aircraft-path` / `--engine-path` / `--systems-path` / `--init-path` / `--property` command-line options the runner passes, and the per-model enable property the bridge-test mode uses. These are the subject of pull requests upstream, so a stock JSBSim build won't work until they land. It follows the same logic as real QTG practice — golden-run or flight-test reference data, defined tolerances, pass/fail reporting — without claiming full Level D qualification. The name and approach trace back to **ATG**, the autotest ground software installed on Air France's Vilgenis B737-228 simulator in 1988: the simulator flew a scripted profile driven by "Stela" test source files under the "Tardis" runner, and engineers checked strip-chart output against transparent tolerance overlays. This system is the same idea, done digitally.
 
 What it can do:
 * Drive JSBSim through a scripted profile — initial conditions, events, control inputs — using JSBSim's own script/event system rather than a custom scripting language.
