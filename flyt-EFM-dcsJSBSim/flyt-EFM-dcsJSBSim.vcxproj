@@ -228,8 +228,9 @@
       <AdditionalLibraryDirectories>F:\DCS.openalpha\Mods\aircraft\TestAirplane\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>ws2_32.lib;jsbsim.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>copy /y "$(outputPath)acEFM.dll" "C:\Users\richard\Saved Games\DCS.openbeta\Mods\Aircraft\Tornado\bin"</Command>
+    <!-- Copies the DLL into a mod when DcsModBin is set, normally from the untracked .vcxproj.user file. -->
+    <PostBuildEvent Condition="'$(DcsModBin)' != ''">
+      <Command>copy /y "$(outputPath)acEFM.dll" "$(DcsModBin)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='JSBSimRelease|x64'">
@@ -251,8 +252,9 @@
       <AdditionalLibraryDirectories>F:\DCS.openalpha\Mods\aircraft\TestAirplane\bin;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>ws2_32.lib;jsbsim.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>copy /y "$(outputPath)acEFM.dll" "C:\Users\richard\Saved Games\DCS.openbeta\Mods\Aircraft\Tornado\bin"</Command>
+    <!-- Copies the DLL into a mod when DcsModBin is set, normally from the untracked .vcxproj.user file. -->
+    <PostBuildEvent Condition="'$(DcsModBin)' != ''">
+      <Command>copy /y "$(outputPath)acEFM.dll" "$(DcsModBin)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
