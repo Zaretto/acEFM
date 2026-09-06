@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:at="urn:aviastorm:autotest-results:1.0"
+           targetNamespace="urn:aviastorm:autotest-results:1.0"
+           elementFormDefault="qualified">
+
+  <!-- ================================================================== -->
+  <!-- Metadata type — document control block                              -->
+  <!-- ================================================================== -->
+  <xs:complexType name="metadataType">
+    <xs:all>
+      <xs:element name="document-number" type="xs:string" minOccurs="0"/>
+      <xs:element name="title" type="xs:string" minOccurs="0"/>
+      <xs:element name="date" type="xs:string"/>
+      <xs:element name="aircraft" type="xs:string" minOccurs="0"/>
+      <xs:element name="system" type="xs:string" minOccurs="0"/>
+      <xs:element name="ata-chapter" type="xs:string" minOccurs="0"/>
+      <xs:element name="reference" type="xs:string" minOccurs="0"/>
+      <xs:element name="revision" type="xs:string" minOccurs="0"/>
+      <xs:element name="prepared-by" type="xs:string" minOccurs="0"/>
+      <xs:element name="classification" type="xs:string" minOccurs="0"/>
+    </xs:all>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Summary counts                                                      -->
+  <!-- ================================================================== -->
+  <xs:complexType name="summaryType">
+    <xs:attribute name="passed" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="failed" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="errors" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="total" type="xs:nonNegativeInteger" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Property result — CSV baseline comparison                           -->
+  <!-- ================================================================== -->
+  <xs:complexType name="propertyResultType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="max-delta" type="xs:decimal" use="required"/>
+    <xs:attribute name="passed" type="xs:boolean" use="required"/>
+    <xs:attribute name="tol-abs" type="xs:decimal"/>
+    <xs:attribute name="tol-rel" type="xs:decimal"/>
+    <xs:attribute name="baseline-at-max" type="xs:decimal"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Check result — JSBSim <check> element evaluation                    -->
+  <!-- ================================================================== -->
+  <xs:complexType name="checkResultType">
+    <xs:attribute name="property" type="xs:string" use="required"/>
+    <xs:attribute name="expected" type="xs:decimal" use="required"/>
+    <xs:attribute name="actual" type="xs:decimal" use="required"/>
+    <xs:attribute name="tolerance" type="xs:decimal" use="required"/>
+    <xs:attribute name="passed" type="xs:boolean" use="required"/>
+    <xs:attribute name="time" type="xs:decimal"/>
+    <xs:attribute name="message" type="xs:string"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Initial condition row                                               -->
+  <!-- ================================================================== -->
+  <xs:complexType name="conditionType">
+    <xs:attribute name="section" type="xs:string" use="required"/>
+    <xs:attribute name="frame" type="xs:string" use="required"/>
+    <xs:attribute name="values" type="xs:string" use="required"/>
+    <xs:attribute name="description" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Event property                                                      -->
+  <!-- ================================================================== -->
+  <xs:complexType name="eventPropertyType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="value" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Event                                                               -->
+  <!-- ================================================================== -->
+  <xs:complexType name="eventType">
+    <xs:sequence>
+      <xs:element name="property" type="at:eventPropertyType"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="time" type="xs:decimal" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Plot reference                                                      -->
+  <!-- ================================================================== -->
+  <xs:complexType name="plotType">
+    <xs:attribute name="file" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Test result message (for error status)                              -->
+  <!-- ================================================================== -->
+  <xs:complexType name="resultType">
+    <xs:sequence>
+      <xs:element name="message" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="status" use="required">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="pass"/>
+          <xs:enumeration value="fail"/>
+          <xs:enumeration value="error"/>
+          <xs:enumeration value="not-run"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="properties-passed" type="xs:nonNegativeInteger"/>
+    <xs:attribute name="properties-total" type="xs:nonNegativeInteger"/>
+    <xs:attribute name="checks-passed" type="xs:nonNegativeInteger"/>
+    <xs:attribute name="checks-total" type="xs:nonNegativeInteger"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Test — a single test case within a group report                     -->
+  <!-- ================================================================== -->
+  <xs:complexType name="testType">
+    <xs:sequence>
+      <xs:element name="description" type="xs:string"/>
+      <xs:element name="result" type="at:resultType"/>
+      <xs:element name="property-results" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="property" type="at:propertyResultType"
+                        maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="check-results" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="check" type="at:checkResultType"
+                        maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="initial-conditions" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="condition" type="at:conditionType"
+                        maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="events" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="event" type="at:eventType"
+                        maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="plots" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="plot" type="at:plotType"
+                        maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Root: autotest-report (per-group)                                   -->
+  <!-- ================================================================== -->
+  <xs:element name="autotest-report">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="metadata" type="at:metadataType"/>
+        <xs:element name="summary" type="at:summaryType"/>
+        <xs:element name="test" type="at:testType"
+                    minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ================================================================== -->
+  <!-- Summary group reference                                             -->
+  <!-- ================================================================== -->
+  <xs:complexType name="groupRefType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="document-number" type="xs:string"/>
+    <xs:attribute name="report" type="xs:string" use="required"/>
+    <xs:attribute name="tests" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="passed" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="failed" type="xs:nonNegativeInteger" use="required"/>
+    <xs:attribute name="errors" type="xs:nonNegativeInteger" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Summary test reference                                              -->
+  <!-- ================================================================== -->
+  <xs:complexType name="testRefType">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="group" type="xs:string" use="required"/>
+    <xs:attribute name="status" type="xs:string" use="required"/>
+    <xs:attribute name="properties" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- ================================================================== -->
+  <!-- Root: autotest-summary (suite-level)                                -->
+  <!-- ================================================================== -->
+  <xs:element name="autotest-summary">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="metadata" type="at:metadataType"/>
+        <xs:element name="summary" type="at:summaryType"/>
+        <xs:element name="groups">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="group" type="at:groupRefType"
+                          maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="tests">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="test" type="at:testRefType"
+                          maxOccurs="unbounded"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

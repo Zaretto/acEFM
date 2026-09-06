@@ -168,7 +168,7 @@ What it can do:
 * Establish new baselines with `--promote` after a reviewed, intentional model change.
 * Generate reports in text (terminal), XML (schema-validated, renders directly in a browser via XSLT), and PDF (Apache FOP, ATA-style document control block), plus comparison plots overlaying baseline and output with the tolerance band — the digital equivalent of the transparent overlay on a strip chart.
 
-Run via `autotest/run_validation.py --aircraft <AircraftMod>` (JSBSim.exe is auto-located from the build tree or PATH, or pass `--jsbsim <path>` explicitly); see `autotest/CLAUDE.md` for full config and workflow details.
+Run via `autotest/run_validation.py --aircraft <AircraftMod>` (JSBSim.exe is auto-located from the build tree or PATH, or pass `--jsbsim <path>` explicitly); see `autotest/README.md` for full config and workflow details.
 
 ![Autotest QTG-style report example.](Documentation/images/F-15-autotest.png)
 
