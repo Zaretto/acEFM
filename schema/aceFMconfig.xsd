@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  aceFMconfig.xsd : schema for an acEFM aircraft configuration file (aceFMconfig.xml).
+
+  The file is the single contract between the aircraft model and everything outside it.
+  Four consumers read it and must agree on its shape:
+    - acEFM.dll            flyt-EFM-dcsJSBSim/DCS_interface.cpp (run time: commands, params, drawargs, gauges)
+    - JSBSimToAnvil        JSBSimToAnvil.Core/Parsing/AceFmConfigParser.cs (code generation for the Anvil FM)
+    - AvionicsDisplay      feed map and "avdisplay check -map" (gauge param names = display bus words)
+    - TestPlane            same reader as acEFM.dll
+  Anything either reader needs that is not expressed here is a schema defect: fix the schema, not the file.
+
+  Two kinds of content:
+    1. <sim>          strict. Every element is enumerated and typed below.
+    2. everything else  a FlightGear-style property preset tree (PropertyList format). Element names are
+                        property names, n="" is the array index, the text is the initial value. The names are
+                        open because they ARE the property tree; the attribute vocabulary (n, type, archive,
+                        userarchive) is checked on the section element only, not on nested nodes (XSD 1.0
+                        cannot type the children of an open wildcard).
+
+  Property path text (gauge, drawarg, command, param, sim/ecs): "/fdm/jsbsim/x/y[0]" or "fdm/jsbsim/x/y";
+  both readers strip the leading slash and the fdm/jsbsim/ prefix.
+
+  Validate: xmllint -noout -schema aceFMconfig.xsd aceFMconfig.xml
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+
+  <!-- ===== simple types ===== -->
+
+  <!-- A JSBSim property path, optionally rooted at /fdm/jsbsim. Segments: letters, digits, _ - . with an
+       optional [n] index. No whitespace. -->
+  <xs:simpleType name="propertyPathT">
+    <xs:restriction base="xs:token">
+      <xs:pattern value="/?[A-Za-z0-9_\-\.]+(\[[0-9]+\])?(/[A-Za-z0-9_\-\.]+(\[[0-9]+\])?)*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Named conversion factors resolved by acEFM's conversion_map (DCS_interface.cpp). -->
+  <xs:simpleType name="conversionNameT">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="METER_TO_FEET"/>
+      <xs:enumeration value="FEET_TO_METER"/>
+      <xs:enumeration value="DEGREES_TO_RADIANS"/>
+      <xs:enumeration value="RADIANS_TO_DEGREES"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- <factor>: a number or one of the conversion names. -->
+  <xs:simpleType name="factorT">
+    <xs:union memberTypes="xs:double conversionNameT"/>
+  </xs:simpleType>
+
+  <!-- A DCS cockpit parameter name as passed to ed_cockpit_get_parameter_handle and read by
+       get_param_handle in cockpit Lua. -->
+  <xs:simpleType name="cockpitParamNameT">
+    <xs:restriction base="xs:token">
+      <xs:pattern value="[A-Za-z_][A-Za-z0-9_]*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A DCS iCommand name from flyt-EFM-dcsJSBSim/iCommands.h (generated from iCommands.lua; 3500+ names,
+       so a pattern rather than an enumeration). Resolved by DCS::iCommandFromName at load. -->
+  <xs:simpleType name="iCommandNameT">
+    <xs:restriction base="xs:token">
+      <xs:pattern value="iCommand[A-Za-z0-9_]+"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Gauge actuator type (DCS_interface.h CockpitItem::ActuatorType). Absent = direct value. -->
+  <xs:simpleType name="gaugeTypeT">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="GenevaDrive"/>
+      <xs:enumeration value="LinearDrive"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- ed_fm_get_param indices acEFM can route from XML: the enumMap in DCS_interface.h. A raw integer is
+       also accepted by the reader; prefer the name. -->
+  <xs:simpleType name="edFmParamNameT">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="ED_FM_ANTI_SKID_ENABLE"/>
+      <xs:enumeration value="ED_FM_CAN_ACCEPT_FUEL_FROM_TANKER"/>
+      <xs:enumeration value="ED_FM_COCKPIT_ALTIMETER_PRESSURE_SETTING_MM_HG"/>
+      <xs:enumeration value="ED_FM_COCKPIT_PRESSURIZATION_OVER_EXTERNAL"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_COMBUSTION"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_CORE_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_CORE_RELATED_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_CORE_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_CORE_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_FUEL_FLOW"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_OIL_PRESSURE"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_RELATED_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_RELATIVE_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_STARTER_CLUTCH_ENGAGED_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_STARTER_CLUTCH_ENGAGED_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_STARTER_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_STARTER_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_STARTER_SPIN_DOWN_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_STARTER_SPIN_DOWN_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_TEMPERATURE"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_0_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_COMBUSTION"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_CORE_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_CORE_RELATED_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_CORE_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_CORE_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_FUEL_FLOW"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_OIL_PRESSURE"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_RELATED_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_RELATIVE_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_STARTER_CLUTCH_ENGAGED_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_STARTER_CLUTCH_ENGAGED_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_STARTER_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_STARTER_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_STARTER_SPIN_DOWN_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_STARTER_SPIN_DOWN_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_TEMPERATURE"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_1_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_COMBUSTION"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_CORE_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_CORE_RELATED_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_CORE_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_CORE_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_FUEL_FLOW"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_OIL_PRESSURE"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_RELATED_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_RELATIVE_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_STARTER_CLUTCH_ENGAGED_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_STARTER_CLUTCH_ENGAGED_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_STARTER_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_STARTER_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_STARTER_SPIN_DOWN_RELATED_RPM"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_STARTER_SPIN_DOWN_RELATED_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_TEMPERATURE"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_THRUST"/>
+      <xs:enumeration value="ED_FM_ENGINE_2_TORQUE"/>
+      <xs:enumeration value="ED_FM_ENGINE_3_RPM"/>
+      <xs:enumeration value="ED_FM_FC3_AR_DOOR_PROBE_HANDLE_POS"/>
+      <xs:enumeration value="ED_FM_FC3_AUTOPILOT_FAILURE_ATTITUDE_STABILIZATION"/>
+      <xs:enumeration value="ED_FM_FC3_AUTOPILOT_STATUS"/>
+      <xs:enumeration value="ED_FM_FC3_BREAKE_CHUTE_STATUS"/>
+      <xs:enumeration value="ED_FM_FC3_BREAKE_CHUTE_VALUE"/>
+      <xs:enumeration value="ED_FM_FC3_CAS_FAILURE_PITCH_CHANNEL"/>
+      <xs:enumeration value="ED_FM_FC3_CAS_FAILURE_ROLL_CHANNEL"/>
+      <xs:enumeration value="ED_FM_FC3_CAS_FAILURE_YAW_CHANNEL"/>
+      <xs:enumeration value="ED_FM_FC3_FLAPS_HANDLE_POS"/>
+      <xs:enumeration value="ED_FM_FC3_GEAR_HANDLE_POS"/>
+      <xs:enumeration value="ED_FM_FC3_PEDAL_L_LIMITER"/>
+      <xs:enumeration value="ED_FM_FC3_PEDAL_R_LIMITER"/>
+      <xs:enumeration value="ED_FM_FC3_RUDDER_PEDALS"/>
+      <xs:enumeration value="ED_FM_FC3_SPEED_BRAKE_HANDLE_POS"/>
+      <xs:enumeration value="ED_FM_FC3_STICK_PITCH"/>
+      <xs:enumeration value="ED_FM_FC3_STICK_PITCH_LIMITER"/>
+      <xs:enumeration value="ED_FM_FC3_STICK_ROLL"/>
+      <xs:enumeration value="ED_FM_FC3_STICK_ROLL_L_LIMITER"/>
+      <xs:enumeration value="ED_FM_FC3_THROTTLE_LEFT"/>
+      <xs:enumeration value="ED_FM_FC3_THROTTLE_RIGHT"/>
+      <xs:enumeration value="ED_FM_FC3_WHEEL_BRAKE_COMMAND_LEFT"/>
+      <xs:enumeration value="ED_FM_FC3_WHEEL_BRAKE_COMMAND_RIGHT"/>
+      <xs:enumeration value="ED_FM_FC3_WHEEL_BRAKE_LEFT"/>
+      <xs:enumeration value="ED_FM_FC3_WHEEL_BRAKE_RIGHT"/>
+      <xs:enumeration value="ED_FM_FLOW_VELOCITY"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_0_LEFT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_0_RIGHT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_1_LEFT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_1_RIGHT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_2_LEFT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_2_RIGHT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_3_LEFT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_3_RIGHT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_4_LEFT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_4_RIGHT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_5_LEFT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_5_RIGHT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_6_LEFT"/>
+      <xs:enumeration value="ED_FM_FUEL_FUEL_TANK_GROUP_6_RIGHT"/>
+      <xs:enumeration value="ED_FM_FUEL_INTERNAL_FUEL"/>
+      <xs:enumeration value="ED_FM_FUEL_LOW_SIGNAL"/>
+      <xs:enumeration value="ED_FM_FUEL_TOTAL_FUEL"/>
+      <xs:enumeration value="ED_FM_OXYGEN_SUPPLY"/>
+      <xs:enumeration value="ED_FM_PISTON_ENGINE_0_MANIFOLD_PRESSURE"/>
+      <xs:enumeration value="ED_FM_PISTON_ENGINE_1_MANIFOLD_PRESSURE"/>
+      <xs:enumeration value="ED_FM_PISTON_ENGINE_2_MANIFOLD_PRESSURE"/>
+      <xs:enumeration value="ED_FM_PROPELLER_0_INTEGRITY_FACTOR"/>
+      <xs:enumeration value="ED_FM_PROPELLER_0_PITCH"/>
+      <xs:enumeration value="ED_FM_PROPELLER_0_RPM"/>
+      <xs:enumeration value="ED_FM_PROPELLER_0_TILT"/>
+      <xs:enumeration value="ED_FM_PROPELLER_1_INTEGRITY_FACTOR"/>
+      <xs:enumeration value="ED_FM_PROPELLER_1_PITCH"/>
+      <xs:enumeration value="ED_FM_PROPELLER_1_RPM"/>
+      <xs:enumeration value="ED_FM_PROPELLER_1_TILT"/>
+      <xs:enumeration value="ED_FM_PROPELLER_2_INTEGRITY_FACTOR"/>
+      <xs:enumeration value="ED_FM_PROPELLER_2_PITCH"/>
+      <xs:enumeration value="ED_FM_PROPELLER_2_RPM"/>
+      <xs:enumeration value="ED_FM_PROPELLER_2_TILT"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_CENTRAL_PITCH"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_CENTRAL_ROLL"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_FACTOR_PITCH"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_FACTOR_ROLL"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_SHAKE_AMPLITUDE_PITCH"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_SHAKE_AMPLITUDE_ROLL"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_SHAKE_FREQUENCY_PITCH"/>
+      <xs:enumeration value="ED_FM_STICK_FORCE_SHAKE_FREQUENCY_ROLL"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_0_DOWN_LOCK"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_0_GEAR_POST_STATE"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_0_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_0_UP_LOCK"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_0_WHEEL_SELF_ATTITUDE"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_0_WHEEL_YAW"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_1_DOWN_LOCK"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_1_GEAR_POST_STATE"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_1_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_1_UP_LOCK"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_1_WHEEL_SELF_ATTITUDE"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_1_WHEEL_YAW"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_2_DOWN_LOCK"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_2_GEAR_POST_STATE"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_2_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_2_UP_LOCK"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_2_WHEEL_SELF_ATTITUDE"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_2_WHEEL_YAW"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_3_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_4_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_5_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_6_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_7_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_8_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_9_RELATIVE_BRAKE_MOMENT"/>
+      <xs:enumeration value="ED_FM_SUSPENSION_10_RELATIVE_BRAKE_MOMENT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- <index>: an ED_FM_* name or the raw integer index. -->
+  <xs:simpleType name="edFmParamIndexT">
+    <xs:union memberTypes="edFmParamNameT xs:nonNegativeInteger"/>
+  </xs:simpleType>
+
+  <!-- ===== the preset tree (everything outside <sim>) ===== -->
+
+  <!-- One node of the FlightGear PropertyList format. Children of any name, nested to any depth.
+       JSBSimToAnvil (ParsePresets) walks <fdm><jsbsim> and requires every leaf to be numeric or
+       empty; acEFM loads the tree as initial property values. -->
+  <xs:complexType name="presetNodeT" mixed="true">
+    <xs:sequence>
+      <xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="n" type="xs:nonNegativeInteger"/>
+    <xs:attribute name="type">
+      <xs:simpleType>
+        <xs:restriction base="xs:token">
+          <xs:enumeration value="bool"/>
+          <xs:enumeration value="int"/>
+          <xs:enumeration value="long"/>
+          <xs:enumeration value="float"/>
+          <xs:enumeration value="double"/>
+          <xs:enumeration value="string"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <xs:attribute name="archive" type="ynT"/>
+    <xs:attribute name="userarchive" type="ynT"/>
+  </xs:complexType>
+
+  <xs:simpleType name="ynT">
+    <xs:restriction base="xs:token">
+      <xs:enumeration value="y"/>
+      <xs:enumeration value="n"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- ===== <sim> ===== -->
+
+  <!-- <gauge>: JSBSim property -> DCS cockpit parameter (ed_cockpit_update_parameter_with_number).
+       The <param> name is the display bus word AvionicsDisplay binds to. -->
+  <xs:complexType name="gaugeT">
+    <xs:all>
+      <xs:element name="param" type="cockpitParamNameT"/>
+      <xs:element name="property" type="propertyPathT"/>
+      <xs:element name="factor" type="factorT" minOccurs="0"/>
+      <xs:element name="delta" type="xs:double" minOccurs="0"/>
+      <xs:element name="type" type="gaugeTypeT" minOccurs="0"/>
+    </xs:all>
+  </xs:complexType>
+
+  <!-- <drawarg n="N">: JSBSim property -> external model draw argument N (ed_fm_set_draw_args).
+       Written only when the value moves by more than <delta> (default 0.0001). -->
+  <xs:complexType name="drawargT">
+    <xs:all>
+      <xs:element name="property" type="propertyPathT"/>
+      <xs:element name="factor" type="xs:double" minOccurs="0"/>
+      <xs:element name="offset" type="xs:double" minOccurs="0"/>
+      <xs:element name="delta" type="xs:double" minOccurs="0"/>
+    </xs:all>
+    <xs:attribute name="n" type="xs:nonNegativeInteger" use="required"/>
+  </xs:complexType>
+
+  <!-- <command>: DCS input command -> JSBSim property (ed_fm_set_command). Identified by <name> (iCommand
+       enum name) or <icommand> (raw code, used for aircraft-specific 10000+ codes); at least one.
+       Write rule, in priority order:
+         <toggle>  present: flip the property between 0 and the toggle value (default 1) once per press
+         <value>   present: write that fixed value
+         otherwise: out = clip(value * factor + offset, clip-min, clip-max)
+       Repeating a code drives several properties. -->
+  <xs:complexType name="commandT">
+    <xs:sequence>
+      <xs:choice>
+        <xs:sequence>
+          <xs:element name="name" type="iCommandNameT"/>
+          <xs:element name="icommand" type="xs:nonNegativeInteger" minOccurs="0"/>
+        </xs:sequence>
+        <xs:sequence>
+          <xs:element name="icommand" type="xs:nonNegativeInteger"/>
+          <xs:element name="name" type="iCommandNameT" minOccurs="0"/>
+        </xs:sequence>
+      </xs:choice>
+      <xs:element name="property" type="propertyPathT"/>
+      <xs:element name="factor" type="factorT" minOccurs="0"/>
+      <xs:element name="offset" type="xs:double" minOccurs="0"/>
+      <xs:element name="clip-min" type="xs:double" minOccurs="0"/>
+      <xs:element name="clip-max" type="xs:double" minOccurs="0"/>
+      <xs:element name="value" type="xs:double" minOccurs="0"/>
+      <xs:element name="toggle" type="xs:double" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- <param>: JSBSim property -> ed_fm_get_param index. XML entries take priority over acEFM's
+       built-in engine and gear defaults (RegisterEngineDefaults / RegisterGearDefaults). -->
+  <xs:complexType name="paramT">
+    <xs:all>
+      <xs:element name="index" type="edFmParamIndexT"/>
+      <xs:element name="property" type="propertyPathT"/>
+      <xs:element name="factor" type="xs:double" minOccurs="0"/>
+      <xs:element name="offset" type="xs:double" minOccurs="0"/>
+    </xs:all>
+  </xs:complexType>
+
+  <xs:complexType name="simT">
+    <xs:all>
+      <!-- JSBSim aircraft root file name without .xml, under EFM/. Required by both readers. -->
+      <xs:element name="aero" type="xs:token"/>
+      <xs:element name="flight-model" minOccurs="0">
+        <xs:simpleType>
+          <xs:restriction base="xs:token">
+            <xs:enumeration value="jsb"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <!-- Engine count for the built-in ED_FM_ENGINE_n defaults; absent or 0 = Propulsion->GetNumEngines(). -->
+      <xs:element name="engine-count" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <!-- Gear unit count for the built-in ED_FM_SUSPENSION_n defaults; absent = 3. -->
+      <xs:element name="gear-count" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="description" type="xs:string" minOccurs="0"/>
+      <xs:element name="long-description" type="xs:string" minOccurs="0"/>
+      <xs:element name="author" type="xs:string" minOccurs="0"/>
+      <xs:element name="aircraft-version" type="xs:token" minOccurs="0"/>
+      <xs:element name="status" type="xs:token" minOccurs="0"/>
+      <xs:element name="current-view" type="presetNodeT" minOccurs="0"/>
+      <!-- Named bindings: a leaf whose text is a property path. Only cabin-altitude-ft is read by acEFM
+           (cabin pressurisation for ed_fm_get_param); JSBSimToAnvil captures every such leaf under <sim>. -->
+      <xs:element name="ecs" minOccurs="0">
+        <xs:complexType>
+          <xs:all>
+            <xs:element name="cabin-altitude-ft" type="propertyPathT" minOccurs="0"/>
+          </xs:all>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="cockpit" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="gauge" type="gaugeT" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="animations" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="drawarg" type="drawargT" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <!-- Without <commands> the aircraft has no throttle, flight controls or gear: acEFM has no built-in input bindings. -->
+      <xs:element name="commands" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="command" type="commandT" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="params" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="param" type="paramT" minOccurs="0" maxOccurs="unbounded"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:all>
+  </xs:complexType>
+
+  <!-- ===== root ===== -->
+
+  <!-- Top-level sections. <sim> is the only one with a fixed shape; the others are preset subtrees.
+       A new top-level section name is a schema change on purpose: the readers must know about it. -->
+  <xs:element name="PropertyList">
+    <xs:complexType>
+      <xs:all>
+        <xs:element name="sim" type="simT"/>
+        <!-- JSBSim property presets: <fdm><jsbsim>path/to/property</jsbsim></fdm>, path built from element
+             names with n="" becoming [n]. Empty leaf = declared, no initial value. -->
+        <xs:element name="fdm" minOccurs="0">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="jsbsim" type="presetNodeT"/>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="gear" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="canopy" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="instrumentation" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="orientation" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="controls" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="engines" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="systems" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="environment" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="velocities" type="presetNodeT" minOccurs="0"/>
+        <xs:element name="position" type="presetNodeT" minOccurs="0"/>
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>
