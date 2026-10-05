@@ -38,6 +38,20 @@ JSBSim is built as a **CMake-generated static library** (`libJSBSim` → `JSBSim
 
 ## acEFMconfig.xml DCS elements
 
+Schema: `schema/aceFMconfig.xsd` (mirrored at `c:\xml-schemas\aceFMconfig.xsd`). Validate with
+`python -c "from lxml import etree; etree.XMLSchema(etree.parse('schema/aceFMconfig.xsd')).assertValid(etree.parse('aceFMconfig.xml'))"`.
+`<sim>` is strict; the preset subtrees (`<fdm>`, `<gear>`, `<controls>`, ...) are open property trees.
+
+The file is shared with two other readers, so a new element or attribute is added to the schema before any reader
+uses it:
+
+- **JSBSimToAnvil** (`I:\dev\DCS\anvil\tools\JSBSimToAnvil`, `AceFmConfigParser.cs`) generates the Anvil FM
+  (`MrcaFM.dll`, module `I:\dev\DCS\anvil\modules\mrca_tornado`) from the same JSBSim XML and takes the
+  command/param/drawarg/gauge bindings from this file. acEFM is the development FM, MrcaFM the shipping FM;
+  plan of record `I:\dev\DCS\MRCA\docs\superpowers\plans\2026-10-02-anvil-efm-merge-and-switch.md`.
+- **AvionicsDisplay** (`C:\Users\richard\source\repos\AvionicsDisplay`) binds cockpit displays to the `<gauge>`
+  `<param>` names and reads this file as the feed map (`avdisplay check --map`). TestPlane feeds its bench.
+
 ### Cockpit API
 
 acEFM supports the mapping between properties and the cockpit API `pfn_ed_cockpit_update_parameter_with_number(Handle, val);` 
