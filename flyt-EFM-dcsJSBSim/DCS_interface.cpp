@@ -406,7 +406,7 @@ void trace_close(void)
 
 static std::map<std::string, double> conversion_map = {
 {"METER_TO_FEET", 3.28084},
-{"FEET_TO_METER  ", 0.3048},
+{"FEET_TO_METER", 0.3048},
 {"DEGREES_TO_RADIANS", 0.0174532925},
 {"RADIANS_TO_DEGREES", 57.295779505},
 {"ZERO", 0.0000001}, // avoid division by zero

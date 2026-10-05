@@ -42,6 +42,13 @@
       <xs:enumeration value="FEET_TO_METER"/>
       <xs:enumeration value="DEGREES_TO_RADIANS"/>
       <xs:enumeration value="RADIANS_TO_DEGREES"/>
+      <xs:enumeration value="ZERO"/>
+      <xs:enumeration value="LBSFT_TO_NM"/>
+      <xs:enumeration value="LBS_TO_N"/>
+      <xs:enumeration value="KGM3_TO_SLUGS_FT3"/>
+      <xs:enumeration value="INCHES_TO_METERS"/>
+      <xs:enumeration value="SLUG_FT2_TO_KG_M2"/>
+      <xs:enumeration value="PA_TO_LBF_FT2"/>
     </xs:restriction>
   </xs:simpleType>
 
