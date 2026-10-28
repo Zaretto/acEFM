@@ -79,6 +79,53 @@ Nodes as follows
     </cockpit>
 ```
 
+### Cockpit inputs (Lua to JSBSim)
+
+`<input>` is the reverse of `<gauge>`: a DCS cockpit parameter that Lua sets, copied into a JSBSim property every frame.
+Use it for anything DCS knows and the EFM API does not hand over, the main case being latitude and longitude for the
+navigation systems (the EFM gets `px/py/pz` in the map's local frame, not geodetic coordinates).
+
+Nodes as follows
+* `<param>` the cockpit parameter name; Lua reads and writes it with `get_param_handle(name)`
+* `<property>` where the value is written; created if absent
+* `<factor>` optional multiplier (number or `conversion_map` name, default 1)
+* `<offset>` optional value added after the factor (default 0)
+
+Write to a property of your own (e.g. `/fdm/jsbsim/nav/dcs/latitude-deg`), not to `position/*`: JSBSim ties those to
+Propagate and ignores writes. A parameter Lua has never set is skipped, so the property keeps its model default until
+the first `:set()`. `<input>` entries are read from `<sim><cockpit>`, so that node must exist.
+
+```xml
+    <cockpit>
+      <input>
+        <param>ACEFM_NAV_LAT</param>
+        <property>/fdm/jsbsim/nav/dcs/latitude-deg</property>
+      </input>
+      <input>
+        <param>ACEFM_NAV_LON</param>
+        <property>/fdm/jsbsim/nav/dcs/longitude-deg</property>
+      </input>
+    </cockpit>
+```
+
+Cockpit device Lua feeding them (`lo_to_geo_coords` and `sensor_data.getSelfCoordinates` are DCS cockpit-script
+functions; check they are present in your DCS version, since neither is part of this repository):
+
+```lua
+local lat_h = get_param_handle("ACEFM_NAV_LAT")
+local lon_h = get_param_handle("ACEFM_NAV_LON")
+
+function update()
+    local p = sensor_data.getSelfCoordinates()   -- DCS local frame: x north, y up, z east
+    local lat, lon = lo_to_geo_coords(p.x, p.z)  -- degrees
+    lat_h:set(lat)
+    lon_h:set(lon)
+end
+```
+
+Parameters are doubles, so degrees keep full precision. The value is updated at the device's `update()` rate, not the
+EFM step rate, which is ample for navigation.
+
 ### Animations
 The config file can contain an `<animations>` node that permits the mapping of draw arguments
 

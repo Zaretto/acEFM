@@ -675,6 +675,25 @@ void DCS_interface::initialize(FGJSBsim * _model)
                 cockpit.AddItem(_model, param, prop, factor);
             }
         }
+
+        // DCS cockpit parameter -> JSBSim property (set from Lua with get_param_handle(name):set(v)).
+        for (auto input : cockpitNode->getChildren("input")) {
+            auto param = input->getStringValue("param");
+            auto prop = input->getStringValue("property");
+            auto factor = input->getDoubleValue("factor", 1.0);
+            auto offset = input->getDoubleValue("offset", 0.0);
+            if (factor == 0) { // factor of 0 makes no sense so it is probably a string lookup
+                auto factor_name = input->getStringValue("factor");
+                if (conversion_map.find(factor_name) != conversion_map.end())
+                    factor = conversion_map[factor_name];
+                else
+                    SG_LOG(SG_FLIGHT, SG_ALERT, "Unknown factor " << factor_name << " for input param " << param);
+            }
+            if (!param || !*param || !prop || !*prop)
+                SG_LOG(SG_FLIGHT, SG_ALERT, "Cockpit input requires param and property");
+            else
+                cockpit.AddInput(_model, param, prop, factor, offset);
+        }
     } else
         SG_LOG(SG_FLIGHT, SG_ALERT, "Missing cockpit definition in /sim/cockpit");
 
@@ -757,6 +776,7 @@ void DCS_interface::simulate(double dt)
     {
         cockpit.Update(model);
     }
+    cockpit.UpdateInputs();
 
     // --- debug instrumentation ---
     if (local_debug) {

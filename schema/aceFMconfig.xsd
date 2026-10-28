@@ -297,6 +297,18 @@
     </xs:all>
   </xs:complexType>
 
+  <!-- <input>: DCS cockpit parameter -> JSBSim property, the reverse of <gauge>. Lua sets the parameter with
+       get_param_handle(name):set(v); the DLL writes value*factor + offset to <property> every frame. The property
+       is created if absent, so use an untied one (e.g. /fdm/jsbsim/nav/dcs/latitude-deg), not position/*. -->
+  <xs:complexType name="cockpitInputT">
+    <xs:all>
+      <xs:element name="param" type="cockpitParamNameT"/>
+      <xs:element name="property" type="propertyPathT"/>
+      <xs:element name="factor" type="factorT" minOccurs="0"/>
+      <xs:element name="offset" type="xs:double" minOccurs="0"/>
+    </xs:all>
+  </xs:complexType>
+
   <!-- <drawarg n="N">: JSBSim property -> external model draw argument N (ed_fm_set_draw_args).
        Written only when the value moves by more than <delta> (default 0.0001). -->
   <xs:complexType name="drawargT">
@@ -381,9 +393,10 @@
       </xs:element>
       <xs:element name="cockpit" minOccurs="0">
         <xs:complexType>
-          <xs:sequence>
-            <xs:element name="gauge" type="gaugeT" minOccurs="0" maxOccurs="unbounded"/>
-          </xs:sequence>
+          <xs:choice minOccurs="0" maxOccurs="unbounded">
+            <xs:element name="gauge" type="gaugeT"/>
+            <xs:element name="input" type="cockpitInputT"/>
+          </xs:choice>
         </xs:complexType>
       </xs:element>
       <xs:element name="animations" minOccurs="0">

@@ -335,12 +335,54 @@ public:
     }
 };
 
+// A DCS cockpit parameter feeding a JSBSim property: the reverse of CockpitItem.
+// Lua (cockpit device or Export) sets the parameter with get_param_handle(name):set(v);
+// each frame it is read and written to the property as value*factor + offset. The
+// property is created if the model does not define it, so it must not be one of
+// JSBSim's tied (read-only) properties. A parameter that has never been set is skipped.
+class CockpitInput
+{
+    void* Handle;
+    SGPropertyNode* Target;
+    std::string Name, Property;
+    double Factor, Offset;
+public:
+    CockpitInput(void* handle, SGPropertyNode* target, std::string name, std::string prop, double factor, double offset)
+        : Handle(handle), Target(target), Name(name), Property(prop), Factor(factor), Offset(offset) {}
+    void Update(const cockpit_param_api& api)
+    {
+        double v;
+        if (Handle && Target && api.pfn_ed_cockpit_parameter_value_to_number
+            && api.pfn_ed_cockpit_parameter_value_to_number(Handle, v, false))
+            Target->setDoubleValue(v * Factor + Offset);
+    }
+};
+
 class Cockpit
 {
 protected:
     cockpit_param_api Api;
     std::vector<CockpitItem *> items;
+    std::vector<CockpitInput *> inputs;
 public:
+    void AddInput(FGJSBsim* model, std::string param, std::string prop, double factor = 1.0, double offset = 0.0)
+    {
+        void* handle = FindHandle(param);
+        SGPropertyNode* target = model->PropertyManager->GetNode(prop, true);
+
+        if (handle && target)
+        {
+            printf("CockpitInput:: %s -> %s (%.1f) == $%x\n", param.c_str(), prop.c_str(), factor, handle);
+            inputs.push_back(new CockpitInput(handle, target, param, prop, factor, offset));
+        }
+        else
+            printf("Cockpit:: failed to bind input %s -> %s\n", param.c_str(), prop.c_str());
+    }
+    void UpdateInputs()
+    {
+        for (auto&& input : inputs)
+            input->Update(Api);
+    }
     void Connect(cockpit_param_api api)
     {
         Api = api;
