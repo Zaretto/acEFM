@@ -1716,11 +1716,13 @@ def _quantise_csv_for_baseline(output_path, dest_path, of_spec):
         col_clean = col.strip()
         if col_clean.lower() in ("time", "t", "time (s)", "time(s)"):
             continue
-        tol = of_spec.get_tolerance(col_clean)
+        # Same lookup order as the comparison: the prefix-stripped name first,
+        # otherwise the global default shadows the property's own tolerance and
+        # the baseline is rounded far coarser than it is compared.
+        short = strip_jsbsim_prefix(col_clean)
+        tol = of_spec.get_tolerance(short)
         if tol is None:
-            short = strip_jsbsim_prefix(col_clean)
-            if short != col_clean:
-                tol = of_spec.get_tolerance(short)
+            tol = of_spec.get_tolerance(col_clean)
         prec = _precision_from_tolerance(tol)
         if prec is not None:
             col_prec[col] = prec

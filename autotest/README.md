@@ -1,10 +1,8 @@
 # acEFM autotest
 
-How the QTG-style validation runner in this directory works and how to run it.
+QTG (Qualification Test Guide)-style regression testing framework for JSBSim aircraft models built for acEFM. 
 
-## What This Is
-
-QTG (Qualification Test Guide)-style regression testing framework for JSBSim aircraft models built for acEFM. Compares simulation output CSVs against known-good baselines using configurable tolerances, generates reports in text/XML/PDF formats with comparison plots.
+Compares simulation output CSVs against known-good baselines using configurable tolerances, generates reports in text/XML/PDF formats with comparison plots.
 
 ## Running Tests
 
