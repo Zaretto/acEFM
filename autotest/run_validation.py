@@ -139,7 +139,7 @@ class TestSpec:
 
 
 class ScriptCheckEvent:
-    """An <event> in a runscript whose <notify> carries <check> elements.
+    """An <event> in a runscript that carries <check> elements.
 
     A check only runs when the event's condition becomes true, so each of
     these is an expectation: the run must reach the condition, or the checks
@@ -148,7 +148,7 @@ class ScriptCheckEvent:
 
     def __init__(self, name, checks, repeating):
         self.name = name
-        self.checks = checks          # number of <check> elements in the notify
+        self.checks = checks          # number of <check> elements on the event
         self.repeating = repeating    # persistent or continuous: fires more than once
 
 
@@ -166,8 +166,7 @@ def parse_script_check_events(script_path):
         return events
     seen = set()
     for ev in run.findall("event"):
-        notify = ev.find("notify")
-        checks = len(notify.findall("check")) if notify is not None else 0
+        checks = len(ev.findall("check"))
         if checks == 0:
             continue
         name = ev.get("name") or ""
@@ -1079,7 +1078,8 @@ _CHECK_MSG_RE = re.compile(
     r"^\s+CHECK (PASS|FAIL): (.+?) = ([\d.eE+\-]+) expected ([\d.eE+\-]+) tol ([\d.eE+\-]+)\s+: (.+)"
 )
 _EVENT_RESULT_RE = re.compile(
-    r"^\s+EVENT (PASS|FAIL): (.+?) \((\d+) of (\d+) checks"
+    r"^\s+EVENT (PASS|FAIL): (.+?) \((\d+) of (\d+) checks (?:passed|failed)\)"
+    r"(?: at time:\s*([\d.]+))?"
 )
 
 # Regex for State Report data lines, e.g.:
@@ -1186,13 +1186,16 @@ def parse_testplane_output(stdout):
         ic_sim_time, ic_rows = _parse_state_report(block)
 
     # --- Extract events and CHECK results (in a single pass) ---
-    # CHECK lines appear within event blocks so we track the current event
-    # time to associate each check with its simulation time.
+    # The CHECK lines of an event precede its EVENT result line, which carries
+    # the time at which the event fired, so they are held until that line
+    # arrives. The header line printed by a <notify> opens an event block whose
+    # property lines are collected for the report.
     checks = []
     event_results = []
-    i = 0
-    while i < len(lines):
-        m = _EVENT_RE.match(lines[i])
+    pending_checks = []
+    event = None
+    for line in lines:
+        m = _EVENT_RE.match(line)
         if m:
             event = {
                 "name": m.group(1),
@@ -1200,100 +1203,43 @@ def parse_testplane_output(stdout):
                 "time": float(m.group(3)),
                 "properties": OrderedDict(),
             }
-            current_event_time = float(m.group(3))
-            i += 1
-            # Collect indented property / CHECK / EVENT-result lines
-            while i < len(lines):
-                pline = lines[i]
-                # CHECK lines (4-space indent, "CHECK PASS/FAIL:")
-                cm = _CHECK_MSG_RE.match(pline)
-                if not cm:
-                    cm_plain = _CHECK_RE.match(pline)
-                else:
-                    cm_plain = None
-                if cm:
-                    checks.append({
-                        "passed": cm.group(1) == "PASS",
-                        "property": cm.group(2),
-                        "actual": float(cm.group(3)),
-                        "expected": float(cm.group(4)),
-                        "tolerance": float(cm.group(5)),
-                        "message": cm.group(6),
-                        "time": current_event_time,
-                    })
-                    i += 1
-                    continue
-                if cm_plain:
-                    checks.append({
-                        "passed": cm_plain.group(1) == "PASS",
-                        "property": cm_plain.group(2),
-                        "actual": float(cm_plain.group(3)),
-                        "expected": float(cm_plain.group(4)),
-                        "tolerance": float(cm_plain.group(5)),
-                        "message": "",
-                        "time": current_event_time,
-                    })
-                    i += 1
-                    continue
-                # EVENT result lines (2-space indent)
-                em = _EVENT_RESULT_RE.match(pline)
-                if em:
-                    event_results.append({
-                        "passed": em.group(1) == "PASS",
-                        "name": em.group(2),
-                        "count": int(em.group(3)),
-                        "total": int(em.group(4)),
-                        "time": current_event_time,
-                    })
-                    i += 1
-                    continue
-                # Property lines (4-space indent with " = ")
-                if pline.startswith("    ") and " = " in pline:
-                    key, _, val = pline.strip().partition(" = ")
-                    event["properties"][key] = val
-                    i += 1
-                else:
-                    break
             events.append(event)
+            continue
+        cm = _CHECK_RE.match(line)
+        if cm:
+            mm = _CHECK_MSG_RE.match(line)
+            pending_checks.append({
+                "passed": cm.group(1) == "PASS",
+                "property": cm.group(2),
+                "actual": float(cm.group(3)),
+                "expected": float(cm.group(4)),
+                "tolerance": float(cm.group(5)),
+                "message": mm.group(6) if mm else "",
+                "time": None,
+            })
+            continue
+        em = _EVENT_RESULT_RE.match(line)
+        if em:
+            fired_at = float(em.group(5)) if em.group(5) else None
+            for check in pending_checks:
+                check["time"] = fired_at
+            checks.extend(pending_checks)
+            pending_checks = []
+            event_results.append({
+                "passed": em.group(1) == "PASS",
+                "name": em.group(2),
+                "count": int(em.group(3)),
+                "total": int(em.group(4)),
+                "time": fired_at,
+            })
+            continue
+        # Property lines of the notify (4-space indent with " = ")
+        if event is not None and line.startswith("    ") and " = " in line:
+            key, _, val = line.strip().partition(" = ")
+            event["properties"][key] = val
         else:
-            # Also catch CHECK/EVENT lines outside event blocks (shouldn't
-            # normally happen, but be robust)
-            cm = _CHECK_MSG_RE.match(lines[i])
-            if cm:
-                checks.append({
-                    "passed": cm.group(1) == "PASS",
-                    "property": cm.group(2),
-                    "actual": float(cm.group(3)),
-                    "expected": float(cm.group(4)),
-                    "tolerance": float(cm.group(5)),
-                    "message": cm.group(6),
-                    "time": None,
-                })
-                i += 1
-                continue
-            cm = _CHECK_RE.match(lines[i])
-            if cm:
-                checks.append({
-                    "passed": cm.group(1) == "PASS",
-                    "property": cm.group(2),
-                    "actual": float(cm.group(3)),
-                    "expected": float(cm.group(4)),
-                    "tolerance": float(cm.group(5)),
-                    "message": "",
-                    "time": None,
-                })
-                i += 1
-                continue
-            em = _EVENT_RESULT_RE.match(lines[i])
-            if em:
-                event_results.append({
-                    "passed": em.group(1) == "PASS",
-                    "name": em.group(2),
-                    "count": int(em.group(3)),
-                    "total": int(em.group(4)),
-                    "time": None,
-                })
-            i += 1
+            event = None
+    checks.extend(pending_checks)
 
     return {
         "initial_conditions": ic_rows,
