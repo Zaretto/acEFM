@@ -13,6 +13,7 @@ import os
 import sys
 import tempfile
 import textwrap
+import types
 import unittest
 from pathlib import Path
 
@@ -32,14 +33,13 @@ SCRIPT = textwrap.dedent("""\
         </event>
         <event name="Check A">
           <condition>simulation/sim-time-sec ge 2.0</condition>
-          <notify>
-            <check property="p" value="1"/>
-            <check property="q" value="2" tol_abs="0.1"/>
-          </notify>
+          <check property="p" value="1"/>
+          <check property="q" value="2" tol_abs="0.1"/>
         </event>
         <event name="Check B" persistent="true">
           <condition>simulation/sim-time-sec ge 3.0</condition>
-          <notify><check property="p" value="1"/></notify>
+          <notify><property>p</property></notify>
+          <check property="p" value="1"/>
         </event>
       </run>
     </runscript>
@@ -81,21 +81,23 @@ class ParseScriptCheckEvents(unittest.TestCase):
         self.assertEqual(rv.parse_script_check_events(path), [])
 
 
-STDOUT = textwrap.dedent("""\
-    Setup (Event 0) executed at time:   1.000000
+# Check A has no notify, so it prints no header line: its CHECK lines and the
+# EVENT line that follows them are all the output it produces.
+STDOUT = textwrap.dedent("""    Setup (Event 0) executed at time:   1.000000
         a = 1
-    Check A (Event 1) executed at time:   2.000000
         CHECK PASS: p = 1 expected 1 tol 1e-06
         CHECK FAIL: q = 2.5 expected 2 tol 0.1
-      EVENT FAIL: Check A (1 of 2 checks failed)
+      EVENT FAIL: Check A (1 of 2 checks failed) at time: 2.00833
 
     Check B (Event 2) executed at time:   3.000000
+        p = 1
         CHECK PASS: p = 1 expected 1 tol 1e-06
-      EVENT PASS: Check B (1 of 1 checks passed)
+      EVENT PASS: Check B (1 of 1 checks passed) at time: 3.00833
 
     Check B (Event 2) executed at time:   3.010000
+        p = 1
         CHECK PASS: p = 1 expected 1 tol 1e-06
-      EVENT PASS: Check B (1 of 1 checks passed)
+      EVENT PASS: Check B (1 of 1 checks passed) at time: 3.01667
 
     """)
 
@@ -107,10 +109,30 @@ class ParseEventLines(unittest.TestCase):
         self.assertEqual([(e["name"], e["passed"], e["total"]) for e in ev],
                          [("Check A", False, 2), ("Check B", True, 1), ("Check B", True, 1)])
 
-    def test_or_mode_pass_line_is_parsed(self):
-        out = "  EVENT PASS: Either (1 of 2 checks passed, or-mode)\n"
-        ev = rv.parse_testplane_output(out)["event_results"]
-        self.assertEqual((ev[0]["name"], ev[0]["passed"], ev[0]["total"]), ("Either", True, 2))
+    def test_event_line_carries_the_time_the_event_fired(self):
+        ev = rv.parse_testplane_output(STDOUT)["event_results"]
+        self.assertEqual([e["time"] for e in ev], [2.00833, 3.00833, 3.01667])
+
+    def test_check_lines_take_their_time_from_the_event_line(self):
+        checks = rv.parse_testplane_output(STDOUT)["checks"]
+        self.assertEqual([(c["property"], c["passed"], c["time"]) for c in checks],
+                         [("p", True, 2.00833), ("q", False, 2.00833),
+                          ("p", True, 3.00833), ("p", True, 3.01667)])
+
+    def test_check_event_without_a_notify_needs_no_header_line(self):
+        out = ("    CHECK PASS: p = 1 expected 1 tol 1e-06\n"
+               "  EVENT PASS: Quiet (1 of 1 checks passed) at time: 4.5\n"
+               "\n")
+        parsed = rv.parse_testplane_output(out)
+        self.assertEqual(parsed["events"], [])
+        self.assertEqual([(c["property"], c["time"]) for c in parsed["checks"]], [("p", 4.5)])
+        self.assertEqual(parsed["event_results"][0]["name"], "Quiet")
+
+    def test_notify_header_still_feeds_the_event_table(self):
+        events = rv.parse_testplane_output(STDOUT)["events"]
+        self.assertEqual([(e["name"], e["time"]) for e in events],
+                         [("Setup", 1.0), ("Check B", 3.0), ("Check B", 3.01)])
+        self.assertEqual(events[0]["properties"]["a"], "1")
 
 
 def expected():
@@ -155,6 +177,45 @@ class MatchCheckEvents(unittest.TestCase):
         # A failed check is reported by the check itself; the event still fired.
         results = rv.match_check_events(expected(), fired("Check A", 2, passed=False) + fired("Check B", 1))
         self.assertTrue(results[0].passed)
+
+
+class DescribeJsbsimFailure(unittest.TestCase):
+    FATAL = ("  No property by the name x has been defined." + "\n"
+             "FATAL ERROR: JSBSim terminated with an exception.\n"
+             "The message was: No property, \"fcs/airbrake-cmd-norm\" is defined.\n"
+             "\n"
+             "No property, \"fcs/airbrake-cmd-norm\" is defined.\n")
+
+    def test_exception_is_reported_with_its_message_although_the_exit_code_is_one(self):
+        why = rv.describe_jsbsim_failure(1, self.FATAL)
+        self.assertIn("fcs/airbrake-cmd-norm", why)
+        self.assertIn("exception", why)
+
+    def test_failed_checks_with_exit_one_are_not_a_failure_to_run(self):
+        self.assertIsNone(rv.describe_jsbsim_failure(1, "Tolerances loaded\n"))
+
+    def test_clean_run_is_not_a_failure(self):
+        self.assertIsNone(rv.describe_jsbsim_failure(0, ""))
+
+    def test_other_exit_codes_report_the_end_of_stderr(self):
+        why = rv.describe_jsbsim_failure(127, "noise\nScript file not found\n")
+        self.assertEqual(why, "exit code 127: noise Script file not found")
+
+    def test_unsigned_windows_exit_code_is_shown_as_negative(self):
+        self.assertEqual(rv.describe_jsbsim_failure(4294967295, ""), "exit code -1")
+
+
+class ResolveJsbsimExe(unittest.TestCase):
+    def test_a_named_executable_that_is_missing_is_an_error(self):
+        args = types.SimpleNamespace(jsbsim="no/such/JSBSim.exe", testplane=None)
+        with self.assertRaises(SystemExit) as raised:
+            rv.resolve_jsbsim_exe(args)
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_a_named_executable_that_exists_is_used(self):
+        path = write_script("")
+        args = types.SimpleNamespace(jsbsim=str(path), testplane=None)
+        self.assertEqual(rv.resolve_jsbsim_exe(args), path.resolve())
 
 
 class ResultAndReport(unittest.TestCase):

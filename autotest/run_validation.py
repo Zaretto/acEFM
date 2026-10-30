@@ -478,6 +478,13 @@ def resolve_jsbsim_exe(args):
     if none is found.
     """
     candidates = []
+    # An executable named explicitly is used or refused, never replaced by
+    # another one further down the list.
+    for source, named in (("--jsbsim", args.jsbsim),
+                          ("JSBSIM_EXE", os.environ.get("JSBSIM_EXE"))):
+        if named and not Path(named).is_file():
+            print(f"ERROR: {source} names {named}, which is not a file.")
+            sys.exit(2)
     if args.jsbsim:
         candidates.append(Path(args.jsbsim))
     if os.environ.get("JSBSIM_EXE"):
@@ -500,6 +507,31 @@ def resolve_jsbsim_exe(args):
     print("ERROR: JSBSim.exe not found. Tried:\n  " + tried +
           "\nSpecify with --jsbsim or set JSBSIM_EXE.")
     sys.exit(2)
+
+
+# JSBSim ends a run that threw an exception with this message on stderr.
+_FATAL_RE = re.compile(
+    r"FATAL ERROR: JSBSim terminated with an exception\.\s*The message was:\s*(.+)")
+
+
+def describe_jsbsim_failure(returncode, stderr):
+    """Return why a JSBSim run did not complete, or None when it ran to the end.
+
+    JSBSim returns 1 both for a failed check and for an exception that ended
+    the run, so the exit code alone cannot tell them apart. The exception is
+    recognised from its message on stderr. Any other non-zero code is a load or
+    usage error, and the last lines of stderr say which. On Windows a negative
+    exit code arrives as an unsigned 32 bit value.
+    """
+    match = _FATAL_RE.search(stderr)
+    if match:
+        return f"{match.group(1).strip()} (JSBSim ended the run with an exception)"
+    if returncode in (0, 1):
+        return None
+    code = returncode - (1 << 32) if returncode > 0x7FFFFFFF else returncode
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    tail = " ".join(lines[-2:])
+    return f"exit code {code}" + (f": {tail}" if tail else "")
 
 
 def run_test(jsbsim_exe, aircraft_dir, script_path, mode="dcs", verbose=0):
@@ -774,7 +806,7 @@ def format_report(test_results, aircraft_name):
     if expects_events and not fired_any:
         lines.append("")
         lines.append("WARNING: no check event fired in any test. Is JSBSim.exe built with the "
-                     "<check> framework (DCS-WIP-no-hacks)?")
+                     "<check> framework (feature/autotest-support)?")
         lines.append("")
 
     # Summary
@@ -1882,8 +1914,9 @@ def main():
             for line in stdout.rstrip().splitlines():
                 print(f"      {line}")
 
-        if returncode < 0:
-            result.run_error = f"TestPlane.exe failed: {stderr.strip()[:200]}"
+        failure = describe_jsbsim_failure(returncode, stderr)
+        if failure:
+            result.run_error = f"JSBSim.exe failed: {failure[:300]}"
             test_results.append(result)
             print(f"    ERROR: {result.run_error}")
             continue

@@ -93,11 +93,12 @@ JSBSim.exe --script=autotest/<script-path> --root=. --aircraft-path=EFM
 ```
 
 `--fg-atmosphere` swaps the DCS path conventions for the FlightGear ones (aircraft in `.`,
-engines and systems in `Engines/` and `Systems/`). The path options and `--property` come
-from the fork's `DCS-WIP-no-hacks` branch, as does the `<check>` framework, so a stock
-JSBSim build does not work yet.
+engines and systems in `Engines/` and `Systems/`). The path options and the `<check>` framework
+come from the fork's `feature/autotest-support` branch, so a stock JSBSim build does not work yet.
 
-Return codes: 0 = all checks passed, 1 = check failure, negative = config/load error.
+Return codes: 0 = all checks passed, 1 = a check failed or never ran, negative = config/load error.
+
+JSBSim also returns 1 when an exception ends the run, for example a script that sets a property the model does not have. The runner recognises the exception message on stderr and reports the test as an error with that message, not as check events that never fired. An executable named with `--jsbsim` or `JSBSIM_EXE` that does not exist is an error; it is never replaced by another one.
 
 Stdout is parsed with regex for:
 - State Report sections (initial conditions)
@@ -113,7 +114,7 @@ A `<check>` only runs when its event's `<condition>` becomes true. A run that di
 - After the run it matches them by name against the `EVENT PASS/FAIL: <name> (n of m checks ...)` lines JSBSim prints. A one-shot event must fire exactly once; a `persistent` or `continuous` event at least once; every firing must have evaluated the declared number of checks.
 - An event that never fired fails the test (`CHECK EVENTS NOT RUN` in the text report, `<check-events>` in the XML, `check-events-fired`/`check-events-expected` on `<result>`).
 - Two check events with the same name, or a check event without a name, is a script error (exit code 2) because the EVENT lines could not be told apart.
-- If scripts expect check events but none fired in any test, the report prints a WARNING: the JSBSim.exe almost certainly lacks the `<check>` framework. That framework lives on the fork's `DCS-WIP-no-hacks` branch, not upstream master, so after switching the JSBSim submodule to another branch, rebuild `aceFM/build/JSBSim` before trusting a run.
+- If scripts expect check events but none fired in any test, the report prints a WARNING: the JSBSim.exe almost certainly lacks the `<check>` framework. That framework lives on the fork's `feature/autotest-support` branch, not upstream master, so after switching the JSBSim submodule to another branch, rebuild `aceFM/build/JSBSim` before trusting a run.
 
 Unit tests for this live in `test_check_events.py`: `python -m unittest test_check_events`.
 
